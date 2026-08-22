@@ -11,6 +11,9 @@
   },
   "dependencies": {
     "@expo/metro-runtime": "~57.0.12",
+    "@expo/vector-icons": "^15.0.2",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@supabase/supabase-js": "^2.112.3",
     "@types/react": "~19.2.4",
     "expo": "^57.0.15",
     "expo-constants": "~57.0.13",
@@ -27,7 +30,8 @@
     "react-native-web": "^0.21.2",
     "react-native-worklets": "0.10.1",
     "tailwindcss": "^3.4.19",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "zustand": "^5.0.15"
   },
   "private": true
 }
