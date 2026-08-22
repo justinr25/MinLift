@@ -1,0 +1,25 @@
+# Expo
+.expo/
+dist/
+web-build/
+
+# Dependencies
+node_modules/
+
+# Native builds
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# Local Planning & Design Artifacts (Development Only)
+/docs/
+
+# OS Metadata
+.DS_Store
+Thumbs.db
