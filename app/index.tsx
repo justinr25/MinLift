@@ -9,8 +9,11 @@ import {
   SetRow,
   ChipPicker,
 } from "../src/components/ui";
+import { useAuthStore } from "../src/stores/auth-store";
 
-export default function ComponentPlayground() {
+export default function HomeScreen() {
+  const { user, profile, signOut, isLoading } = useAuthStore();
+
   const [selectedCategory, setSelectedCategory] = useState("Chest");
   const [set1Done, setSet1Done] = useState(true);
   const [set2Done, setSet2Done] = useState(false);
@@ -25,12 +28,23 @@ export default function ComponentPlayground() {
   return (
     <SafeAreaView className="flex-1 bg-canvas">
       <ScrollView className="flex-1 px-4 py-4" showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View className="mb-6">
-          <Text className="text-[28px] font-bold text-primary">MinLift</Text>
-          <Text className="text-[14px] text-secondary">
-            Phase 1.2 — Atomic UI Component Library
-          </Text>
+        {/* Header with User Profile & Sign Out */}
+        <View className="mb-6 flex-row items-center justify-between">
+          <View>
+            <Text className="text-[28px] font-bold text-primary">MinLift</Text>
+            <Text className="text-[14px] text-secondary">
+              Welcome, {profile?.display_name || user?.email || "Lifter"}
+            </Text>
+          </View>
+          <View className="w-28">
+            <PrimaryButton
+              title="Sign Out"
+              variant="outline"
+              loading={isLoading}
+              onPress={signOut}
+              className="h-[38px]"
+            />
+          </View>
         </View>
 
         {/* 1. HeroStartButton */}

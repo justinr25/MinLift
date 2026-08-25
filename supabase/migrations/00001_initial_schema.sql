@@ -16,7 +16,8 @@ CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
   INSERT INTO public.profiles (id, display_name)
-  VALUES (new.id, COALESCE(new.raw_user_meta_data->>'full_name', 'Lifter'));
+  VALUES (new.id, COALESCE(new.raw_user_meta_data->>'full_name', 'Lifter'))
+  ON CONFLICT (id) DO NOTHING;
   RETURN new;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -175,3 +176,16 @@ CREATE POLICY "Users can manage their own workout sets"
       WHERE w.id = workout_sets.workout_id AND w.user_id = auth.uid()
     )
   );
+
+-- ============================================
+-- SCHEMA & TABLE PERMISSIONS
+-- ============================================
+
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL ROUTINES IN SCHEMA public TO anon, authenticated, service_role;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON ROUTINES TO anon, authenticated, service_role;
