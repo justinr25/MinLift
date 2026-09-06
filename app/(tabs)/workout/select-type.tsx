@@ -9,67 +9,40 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { DashedActionCard } from "../../../src/components/ui/DashedActionCard";
+import { PrimaryButton } from "../../../src/components/ui/PrimaryButton";
 import { useActiveWorkoutStore } from "../../../src/stores/active-workout-store";
 
 interface WorkoutTypeItem {
   id: string;
   name: string;
-  defaultExercises?: Array<{ id: string; name: string; category: string }>;
 }
 
 export default function SelectWorkoutTypeScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ locationId?: string; locationName?: string }>();
   const startWorkout = useActiveWorkoutStore((s) => s.startWorkout);
-  const addExercise = useActiveWorkoutStore((s) => s.addExercise);
 
   const [workoutTypes, setWorkoutTypes] = useState<WorkoutTypeItem[]>([
-    {
-      id: "type-push",
-      name: "Push",
-      defaultExercises: [
-        { id: "ex-bench-press", name: "Barbell Bench Press", category: "Chest" },
-        { id: "ex-incline-db-press", name: "Incline Dumbbell Press", category: "Chest" },
-        { id: "ex-lateral-raise", name: "Dumbbell Lateral Raise", category: "Shoulders" },
-      ],
-    },
-    {
-      id: "type-pull",
-      name: "Pull",
-      defaultExercises: [
-        { id: "ex-barbell-row", name: "Barbell Bent-Over Row", category: "Back" },
-        { id: "ex-lat-pulldown", name: "Lat Pulldown", category: "Back" },
-        { id: "ex-bicep-curl", name: "Dumbbell Bicep Curl", category: "Arms" },
-      ],
-    },
-    {
-      id: "type-legs",
-      name: "Legs",
-      defaultExercises: [
-        { id: "ex-barbell-squat", name: "Barbell Back Squat", category: "Legs" },
-        { id: "ex-romanian-deadlift", name: "Romanian Deadlift", category: "Legs" },
-        { id: "ex-calf-raise", name: "Standing Calf Raise", category: "Legs" },
-      ],
-    },
+    { id: "type-push", name: "Push" },
+    { id: "type-pull", name: "Pull" },
+    { id: "type-legs", name: "Legs" },
   ]);
 
-  const handleSelectType = (item: WorkoutTypeItem) => {
-    // 1. Initialize active workout in Zustand store
+  const [selectedTypeId, setSelectedTypeId] = useState<string>("type-push");
+
+  const handleNext = () => {
+    const selected = workoutTypes.find((t) => t.id === selectedTypeId) || workoutTypes[0];
+    if (!selected) return;
+
+    // 1. Initialize active workout in Zustand store (with empty exercises)
     startWorkout({
-      workoutTypeId: item.id,
-      workoutTypeName: item.name,
+      workoutTypeId: selected.id,
+      workoutTypeName: selected.name,
       locationId: params.locationId || null,
       locationName: params.locationName || null,
     });
 
-    // 2. Pre-fill starter exercise suggestions for routine
-    if (item.defaultExercises && item.defaultExercises.length > 0) {
-      item.defaultExercises.forEach((ex) => {
-        addExercise(ex);
-      });
-    }
-
-    // 3. Navigate directly to active workout logger within Workout tab
+    // 2. Navigate directly to active workout logger within Workout tab
     router.replace("/(tabs)/workout" as any);
   };
 
@@ -80,7 +53,7 @@ export default function SelectWorkoutTypeScreen() {
       name: name.trim(),
     };
     setWorkoutTypes((prev) => [...prev, newType]);
-    handleSelectType(newType);
+    setSelectedTypeId(newType.id);
   };
 
   return (
@@ -111,19 +84,28 @@ export default function SelectWorkoutTypeScreen() {
         </Text>
 
         {/* Preset Type Cards */}
-        {workoutTypes.map((type) => (
-          <TouchableOpacity
-            key={type.id}
-            activeOpacity={0.7}
-            onPress={() => handleSelectType(type)}
-            className="flex-row items-center justify-between p-4 mb-3 bg-surface rounded-2xl border border-border-subtle"
-          >
-            <Text className="text-[18px] font-semibold text-primary">
-              {type.name}
-            </Text>
-            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
-          </TouchableOpacity>
-        ))}
+        {workoutTypes.map((type) => {
+          const isSelected = selectedTypeId === type.id;
+          return (
+            <TouchableOpacity
+              key={type.id}
+              activeOpacity={0.7}
+              onPress={() => setSelectedTypeId(type.id)}
+              className={`flex-row items-center justify-between p-4 mb-3 rounded-2xl border ${
+                isSelected
+                  ? "bg-white border-primary border-2 shadow-sm"
+                  : "bg-surface border-border-subtle"
+              }`}
+            >
+              <Text className="text-[18px] font-semibold text-primary">
+                {type.name}
+              </Text>
+              {isSelected ? (
+                <Ionicons name="checkmark-circle" size={22} color="#000000" />
+              ) : null}
+            </TouchableOpacity>
+          );
+        })}
 
         {/* Dashed Create New Type Card */}
         <View className="mt-1 mb-6">
@@ -135,6 +117,15 @@ export default function SelectWorkoutTypeScreen() {
           />
         </View>
       </ScrollView>
+
+      {/* Bottom Actions */}
+      <View className="px-5 py-4 border-t border-border-subtle bg-white">
+        <PrimaryButton
+          title="Next"
+          onPress={handleNext}
+          disabled={!selectedTypeId}
+        />
+      </View>
     </SafeAreaView>
   );
 }

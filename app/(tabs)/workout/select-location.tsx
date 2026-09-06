@@ -45,16 +45,6 @@ export default function SelectLocationScreen() {
     });
   };
 
-  const handleSkip = () => {
-    router.push({
-      pathname: "/(tabs)/workout/select-type" as any,
-      params: {
-        locationId: "",
-        locationName: "",
-      },
-    });
-  };
-
   return (
     <SafeAreaView className="flex-1 bg-canvas">
       {/* Top Header */}
@@ -122,16 +112,11 @@ export default function SelectLocationScreen() {
 
       {/* Bottom Actions */}
       <View className="px-5 py-4 border-t border-border-subtle bg-white">
-        <PrimaryButton title="Next" onPress={handleNext} className="mb-3" />
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={handleSkip}
-          className="items-center py-2"
-        >
-          <Text className="text-[14px] font-medium text-secondary">
-            Skip for now
-          </Text>
-        </TouchableOpacity>
+        <PrimaryButton
+          title="Next"
+          onPress={handleNext}
+          disabled={!selectedLocationId}
+        />
       </View>
     </SafeAreaView>
   );
