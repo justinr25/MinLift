@@ -212,13 +212,53 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>((set, get) => ({
       const startedAt = state.startTime ? new Date(state.startTime).toISOString() : new Date().toISOString();
       const completedAt = new Date().toISOString();
 
-      // 1. Insert into workouts table
+      // 1. Resolve Workout Type UUID
+      let workoutTypeId = state.workoutTypeId;
+      const isTypeUUID = workoutTypeId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(workoutTypeId);
+      if (!isTypeUUID) {
+        const { data: matchedType } = await supabase
+          .from("workout_types")
+          .select("id")
+          .ilike("name", state.workoutTypeName || "Push")
+          .maybeSingle();
+        if (matchedType) {
+          workoutTypeId = matchedType.id;
+        }
+      }
+
+      // 2. Resolve Location UUID (ensure exists in locations table)
+      let locationId = state.locationId;
+      const isLocationUUID = locationId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(locationId);
+      if (state.locationName && (!locationId || !isLocationUUID)) {
+        const { data: existingLoc } = await supabase
+          .from("locations")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("name", state.locationName)
+          .maybeSingle();
+
+        if (existingLoc) {
+          locationId = existingLoc.id;
+        } else {
+          const { data: newLoc } = await supabase
+            .from("locations")
+            .insert({
+              user_id: user.id,
+              name: state.locationName,
+            })
+            .select("id")
+            .single();
+          if (newLoc) locationId = newLoc.id;
+        }
+      }
+
+      // 3. Insert into workouts table
       const { data: workoutData, error: workoutError } = await supabase
         .from("workouts")
         .insert({
           user_id: user.id,
-          workout_type_id: state.workoutTypeId,
-          location_id: state.locationId,
+          workout_type_id: workoutTypeId,
+          location_id: locationId || null,
           started_at: startedAt,
           completed_at: completedAt,
         })
@@ -227,20 +267,53 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>((set, get) => ({
 
       if (workoutError || !workoutData) {
         console.warn("Error inserting workout (using offline fallback if needed):", workoutError?.message);
-        // Reset state so user is not stuck
         get().discardWorkout();
         return { success: true };
       }
 
       const workoutId = workoutData.id;
 
-      // 2. Prepare workout sets for insert
+      // 4. Ensure each logged exercise exists in exercises table for this user
+      const exerciseMap = new Map<string, string>();
+      for (const ex of state.exercises) {
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ex.id);
+        if (isUUID) {
+          exerciseMap.set(ex.id, ex.id);
+        } else {
+          const { data: existingEx } = await supabase
+            .from("exercises")
+            .select("id")
+            .eq("user_id", user.id)
+            .eq("name", ex.name)
+            .maybeSingle();
+
+          if (existingEx) {
+            exerciseMap.set(ex.id, existingEx.id);
+          } else {
+            const { data: newEx } = await supabase
+              .from("exercises")
+              .insert({
+                user_id: user.id,
+                name: ex.name,
+                category: ex.category || "Other",
+              })
+              .select("id")
+              .single();
+            if (newEx) exerciseMap.set(ex.id, newEx.id);
+          }
+        }
+      }
+
+      // 5. Insert workout sets
       const setsToInsert: any[] = [];
       state.exercises.forEach((ex) => {
+        const dbExId = exerciseMap.get(ex.id);
+        if (!dbExId) return;
+
         ex.sets.forEach((s) => {
           setsToInsert.push({
             workout_id: workoutId,
-            exercise_id: ex.id,
+            exercise_id: dbExId,
             set_number: s.setNumber,
             reps: parseInt(s.reps, 10) || s.ghostReps || 0,
             weight: parseFloat(s.weight) || s.ghostWeight || 0,
@@ -256,7 +329,7 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>((set, get) => ({
         }
       }
 
-      // 3. Reset active state
+      // 6. Reset active state
       get().discardWorkout();
       return { success: true };
     } catch (err: any) {
