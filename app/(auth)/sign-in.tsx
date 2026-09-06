@@ -16,7 +16,7 @@ import { useAuthStore } from "../../src/stores/auth-store";
 
 export default function SignInScreen() {
   const router = useRouter();
-  const { signIn, isLoading } = useAuthStore();
+  const { signIn, signInDemo, isLoading } = useAuthStore();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -111,6 +111,14 @@ export default function SignInScreen() {
             title="Sign In"
             onPress={handleSignIn}
             loading={isLoading}
+            className="mb-3"
+          />
+
+          {/* Continue as Guest */}
+          <PrimaryButton
+            title="Continue as Guest"
+            variant="outline"
+            onPress={signInDemo}
             className="mb-6"
           />
 

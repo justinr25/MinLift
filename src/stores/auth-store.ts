@@ -12,6 +12,7 @@ interface AuthState {
   initialize: () => Promise<void>;
   fetchProfile: (userId: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signInDemo: () => void;
   signUp: (
     email: string,
     password: string,
@@ -137,6 +138,36 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } finally {
       set({ isLoading: false });
     }
+  },
+
+  signInDemo: () => {
+    const demoUser = {
+      id: "demo-lifter-1",
+      email: "justin@minlift.local",
+      user_metadata: { full_name: "Justin" },
+      app_metadata: {},
+      aud: "authenticated",
+      created_at: new Date().toISOString(),
+    } as any;
+
+    set({
+      session: {
+        access_token: "demo-token",
+        refresh_token: "demo-refresh",
+        expires_in: 3600,
+        token_type: "bearer",
+        user: demoUser,
+      } as any,
+      user: demoUser,
+      profile: {
+        id: "demo-lifter-1",
+        display_name: "Justin",
+        preferred_weight_unit: "lbs",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      isLoading: false,
+    });
   },
 
   signUp: async (email: string, password: string, displayName: string) => {

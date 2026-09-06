@@ -26,7 +26,7 @@ function RootLayoutNav() {
       router.replace("/(auth)/sign-in" as Href);
     } else if (session && inAuthGroup) {
       // Redirect authenticated user to home/tabs
-      router.replace("/" as Href);
+      router.replace("/(tabs)" as Href);
     }
   }, [session, isInitialized, segments]);
 
@@ -45,7 +45,7 @@ function RootLayoutNav() {
         contentStyle: { backgroundColor: "#FFFFFF" },
       }}
     >
-      <Stack.Screen name="index" />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
     </Stack>
   );
