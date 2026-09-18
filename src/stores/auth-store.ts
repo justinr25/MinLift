@@ -143,8 +143,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   signInDemo: () => {
     const demoUser = {
       id: "demo-lifter-1",
-      email: "justin@minlift.local",
-      user_metadata: { full_name: "Justin" },
+      email: "guest@minlift.local",
+      user_metadata: { full_name: "Guest" },
       app_metadata: {},
       aud: "authenticated",
       created_at: new Date().toISOString(),
@@ -161,7 +161,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       user: demoUser,
       profile: {
         id: "demo-lifter-1",
-        display_name: "Justin",
+        display_name: "Guest",
         preferred_weight_unit: "lbs",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
