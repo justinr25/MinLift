@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "../lib/supabase";
 import { useAuthStore, DEMO_USER_ID } from "./auth-store";
+import { enqueueMutation, isValidUUID } from "../lib/offline-queue";
 
 export interface ExerciseItem {
   id: string;
@@ -456,9 +457,14 @@ export const useExerciseStore = create<ExerciseState>()(
             .single();
 
           if (error || !data) {
-            // Local fallback
+            // Local fallback with valid UUID
+            const fallbackId =
+              typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+                ? crypto.randomUUID()
+                : `custom-ex-${Date.now()}`;
+
             const fallbackItem: ExerciseItem = {
-              id: `custom-ex-${Date.now()}`,
+              id: fallbackId,
               userId: user.id,
               name: trimmedName,
               category: category.trim() || "Other",
@@ -469,8 +475,18 @@ export const useExerciseStore = create<ExerciseState>()(
               lastWeightLifted: null,
               lastReps: null,
             };
+
             const updated = [fallbackItem, ...get().exercises];
             set({ exercises: updated, isSaving: false });
+
+            await enqueueMutation("CREATE_EXERCISE", {
+              id: isValidUUID(fallbackId) ? fallbackId : undefined,
+              userId: user.id,
+              name: trimmedName,
+              category: category.trim() || "Other",
+              notes: notes?.trim() || null,
+            });
+
             return { success: true, exercise: fallbackItem };
           }
 
@@ -491,9 +507,37 @@ export const useExerciseStore = create<ExerciseState>()(
           set({ exercises: updated, isSaving: false });
           return { success: true, exercise: createdItem };
         } catch (err: any) {
-          console.error("createExercise exception:", err);
-          set({ isSaving: false });
-          return { success: false, error: err?.message || "Failed to create exercise" };
+          console.warn("createExercise exception, falling back to offline queue:", err);
+          const fallbackId =
+            typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+              ? crypto.randomUUID()
+              : `custom-ex-${Date.now()}`;
+
+          const fallbackItem: ExerciseItem = {
+            id: fallbackId,
+            userId: user.id,
+            name: trimmedName,
+            category: category.trim() || "Other",
+            notes: notes?.trim() || null,
+            isArchived: false,
+            createdAt: new Date().toISOString(),
+            lastPerformedAt: null,
+            lastWeightLifted: null,
+            lastReps: null,
+          };
+
+          const updated = [fallbackItem, ...get().exercises];
+          set({ exercises: updated, isSaving: false });
+
+          await enqueueMutation("CREATE_EXERCISE", {
+            id: isValidUUID(fallbackId) ? fallbackId : undefined,
+            userId: user.id,
+            name: trimmedName,
+            category: category.trim() || "Other",
+            notes: notes?.trim() || null,
+          });
+
+          return { success: true, exercise: fallbackItem };
         }
       },
 
@@ -524,13 +568,15 @@ export const useExerciseStore = create<ExerciseState>()(
             .eq("id", exerciseId);
 
           if (error) {
-            console.warn("Notice updating exercise notes in Supabase:", error.message);
-            return { success: false, error: error.message };
+            console.warn("Notice updating exercise notes in Supabase, enqueuing offline mutation:", error.message);
+            await enqueueMutation("UPDATE_EXERCISE_NOTES", { exerciseId, notes: trimmed || null });
+            return { success: true };
           }
           return { success: true };
         } catch (err: any) {
-          console.error("updateExerciseNotes exception:", err);
-          return { success: false, error: err?.message || "Failed to save notes" };
+          console.warn("updateExerciseNotes exception, enqueuing offline mutation:", err);
+          await enqueueMutation("UPDATE_EXERCISE_NOTES", { exerciseId, notes: trimmed || null });
+          return { success: true };
         }
       },
 
@@ -613,17 +659,17 @@ export const useExerciseStore = create<ExerciseState>()(
           set({ isSaving: false });
 
           if (error) {
-            console.warn("Error archiving exercise in Supabase:", error.message);
-            // Rollback optimistic update
-            set({ exercises: prevExercises });
-            return { success: false, error: error.message };
+            console.warn("Notice archiving exercise in Supabase, enqueuing offline mutation:", error.message);
+            await enqueueMutation("ARCHIVE_EXERCISE", { exerciseId });
+            return { success: true };
           }
 
           return { success: true };
         } catch (err: any) {
-          console.error("archiveExercise exception:", err);
-          set({ exercises: prevExercises, isSaving: false });
-          return { success: false, error: err?.message || "Failed to archive exercise" };
+          console.warn("archiveExercise exception, enqueuing offline mutation:", err);
+          set({ isSaving: false });
+          await enqueueMutation("ARCHIVE_EXERCISE", { exerciseId });
+          return { success: true };
         }
       },
 

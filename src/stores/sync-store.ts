@@ -3,6 +3,7 @@ import { Platform } from "react-native";
 import {
   getPendingCount,
   processMutationQueue,
+  onQueueChange,
 } from "../lib/offline-queue";
 import { supabase } from "../lib/supabase";
 
@@ -20,71 +21,78 @@ interface SyncState {
   checkConnection: () => Promise<boolean>;
 }
 
-export const useSyncStore = create<SyncState>((set, get) => ({
-  isOnline: true,
-  isSyncing: false,
-  pendingCount: 0,
-  lastSyncedAt: null,
-  error: null,
-
-  setOnline: (isOnline: boolean) => {
-    set({ isOnline });
-    if (isOnline) {
-      // Auto-flush queue when coming back online
-      get().syncPendingMutations();
-    }
-  },
-
-  refreshPendingCount: async () => {
-    const count = await getPendingCount();
+export const useSyncStore = create<SyncState>((set, get) => {
+  // Listen for background queue mutations in real-time
+  onQueueChange((count) => {
     set({ pendingCount: count });
-    return count;
-  },
+  });
 
-  checkConnection: async () => {
-    // If running in browser, check navigator.onLine first
-    if (Platform.OS === "web" && typeof navigator !== "undefined" && !navigator.onLine) {
-      set({ isOnline: false });
-      return false;
-    }
+  return {
+    isOnline: true,
+    isSyncing: false,
+    pendingCount: 0,
+    lastSyncedAt: null,
+    error: null,
 
-    try {
-      // Ping Supabase with a lightweight query
-      const { error } = await supabase.from("workout_types").select("id").limit(1);
-      const online = !error || error.code !== "PGRST301";
-      set({ isOnline: online });
-      return online;
-    } catch {
-      set({ isOnline: false });
-      return false;
-    }
-  },
+    setOnline: (isOnline: boolean) => {
+      set({ isOnline });
+      if (isOnline) {
+        // Auto-flush queue when coming back online
+        get().syncPendingMutations();
+      }
+    },
 
-  syncPendingMutations: async () => {
-    if (get().isSyncing) {
-      return { processed: 0, errors: 0 };
-    }
+    refreshPendingCount: async () => {
+      const count = await getPendingCount();
+      set({ pendingCount: count });
+      return count;
+    },
 
-    set({ isSyncing: true, error: null });
+    checkConnection: async () => {
+      // If running in browser, check navigator.onLine first
+      if (Platform.OS === "web" && typeof navigator !== "undefined" && !navigator.onLine) {
+        set({ isOnline: false });
+        return false;
+      }
 
-    try {
-      const result = await processMutationQueue();
-      const remainingCount = await getPendingCount();
+      try {
+        // Ping Supabase with a lightweight query
+        const { error } = await supabase.from("workout_types").select("id").limit(1);
+        const online = !error;
+        set({ isOnline: online });
+        return online;
+      } catch {
+        set({ isOnline: false });
+        return false;
+      }
+    },
 
-      set({
-        isSyncing: false,
-        pendingCount: remainingCount,
-        lastSyncedAt: result.processed > 0 ? new Date().toISOString() : get().lastSyncedAt,
-      });
+    syncPendingMutations: async () => {
+      if (get().isSyncing) {
+        return { processed: 0, errors: 0 };
+      }
 
-      return result;
-    } catch (err: any) {
-      console.error("syncPendingMutations exception:", err);
-      set({
-        isSyncing: false,
-        error: err?.message || "Sync failed",
-      });
-      return { processed: 0, errors: 1 };
-    }
-  },
-}));
+      set({ isSyncing: true, error: null });
+
+      try {
+        const result = await processMutationQueue();
+        const remainingCount = await getPendingCount();
+
+        set({
+          isSyncing: false,
+          pendingCount: remainingCount,
+          lastSyncedAt: result.processed > 0 ? new Date().toISOString() : get().lastSyncedAt,
+        });
+
+        return result;
+      } catch (err: any) {
+        console.error("syncPendingMutations exception:", err);
+        set({
+          isSyncing: false,
+          error: err?.message || "Sync failed",
+        });
+        return { processed: 0, errors: 1 };
+      }
+    },
+  };
+});

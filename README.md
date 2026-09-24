@@ -82,28 +82,48 @@ While `npx expo start` is running in the terminal:
 
 ---
 
+## Automated Testing Suite
+
+MinLift includes end-to-end integration test runners that execute directly against local Supabase PostgreSQL:
+
+```bash
+# Run specific phase test suite
+npm run test:phase3   # Core in-gym active workout logging (29 assertions)
+npm run test:phase4   # History feed & interactive detail editing (37 assertions)
+npm run test:phase5   # Exercises catalog, notes & template linking (43 assertions)
+npm run test:phase6   # Profile tab, volume stats & offline mutation queue (45 assertions)
+
+# Run full project type check
+npm run check         # npx tsc --noEmit (strict typecheck)
+```
+
+---
+
 ## Project Structure
 
 ```
 MinLift/
 ├── app/                        # Expo Router file-based routes
 │   ├── (auth)/                 # Authentication screens (Sign In, Sign Up)
-│   ├── (tabs)/                 # 5-Tab Navigation (Home, Workout, History, Exercises, Profile)
-│   ├── workout/                # Modal setup stack (Location, Type selection)
-│   ├── history/                # Workout history detail and inline editor
-│   ├── exercise/               # Exercise detail and persistent form notes
-│   ├── _layout.tsx             # Root layout with SafeAreaProvider and global CSS
-│   └── index.tsx               # Entry playground screen
+│   ├── (tabs)/                 # Universal 5-Tab Navigation (Permanently Pinned Tab Bar)
+│   │   ├── _layout.tsx         # Bottom tab bar with active indicator dot
+│   │   ├── index.tsx           # Home Dashboard (Wireframe 3)
+│   │   ├── workout/            # Nested workout stack (Idle, select location/type, live logger)
+│   │   ├── history/            # Nested history stack (History feed index, interactive detail editor)
+│   │   ├── exercises/          # Nested exercise catalog stack (Catalog index, exercise detail)
+│   │   └── profile.tsx         # Profile & Settings (Wireframe 11: 5-bar volume, unit toggle, sync)
+│   └── _layout.tsx             # Root layout with SafeAreaProvider, auth listener, and global CSS
 ├── src/
 │   ├── components/
 │   │   ├── ui/                 # Atomic UI primitives (PrimaryButton, HeroStartButton, SetRow, etc.)
 │   │   └── workout/            # Domain components (ExerciseLoggerCard, AddExerciseSheet, Timer)
 │   ├── hooks/                  # Custom hooks (useWorkoutTimer, useOfflineSync)
-│   ├── lib/                    # Supabase client and offline sync queue
-│   ├── stores/                 # Zustand stores (auth, active workout, history, exercises)
-│   └── types/                  # TypeScript database definitions
+│   ├── lib/                    # Supabase client and offline mutation queue (offline-queue.ts)
+│   ├── stores/                 # Zustand stores (auth, active-workout, workout, exercise, sync)
+│   └── types/                  # TypeScript database definitions (database.ts)
+├── scripts/                    # Headless integration test suites (test-phase3, 4, 5, 6)
 ├── supabase/
-│   ├── migrations/             # SQL schema migrations
+│   ├── migrations/             # SQL schema migrations (profiles, workouts, sets, exercises, etc.)
 │   └── seed.sql                # Default seed data (Push, Pull, Legs)
 ├── tailwind.config.ts          # NativeWind monochrome design tokens
 └── tsconfig.json               # TypeScript strict mode configuration

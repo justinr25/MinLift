@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "../lib/supabase";
 import { useAuthStore, DEMO_USER_ID } from "./auth-store";
+import { enqueueMutation, isValidUUID } from "../lib/offline-queue";
 
 function getInitialGhostValues(name: string, category?: string): { ghostReps: number; ghostWeight: number } {
   const lowerName = (name || "").toLowerCase();
@@ -270,19 +271,18 @@ export const useWorkoutStore = create<WorkoutState>()(
         .eq("id", setId);
 
       if (error) {
-        console.warn("Error updating set in Supabase:", error.message);
-        set({ currentDetail: prevDetail, error: error.message });
+        console.warn("Notice updating set in Supabase, enqueuing offline mutation:", error.message);
+        await enqueueMutation("UPDATE_SET", { setId, reps, weight });
       }
     } catch (err: any) {
-      console.error("updateSet exception:", err);
-      set({ currentDetail: prevDetail, error: err?.message || "Failed to update set" });
+      console.warn("updateSet exception, enqueuing offline mutation:", err);
+      await enqueueMutation("UPDATE_SET", { setId, reps, weight });
     }
   },
 
   deleteSet: async (setId: string, exerciseId: string) => {
     const { currentDetail } = get();
     if (!currentDetail) return;
-    const prevDetail = currentDetail;
 
     // Optimistically remove set and renumber
     const updatedExercises = currentDetail.exercises.map((ex) => {
@@ -295,6 +295,7 @@ export const useWorkoutStore = create<WorkoutState>()(
     });
 
     set({ currentDetail: { ...currentDetail, exercises: updatedExercises } });
+    const targetEx = updatedExercises.find((e) => e.id === exerciseId);
 
     // Persist delete to Supabase & renumber remaining sets
     try {
@@ -304,24 +305,31 @@ export const useWorkoutStore = create<WorkoutState>()(
         .eq("id", setId);
 
       if (error) {
-        console.warn("Error deleting set in Supabase:", error.message);
-        set({ currentDetail: prevDetail, error: error.message });
+        console.warn("Notice deleting set in Supabase, enqueuing offline mutation:", error.message);
+        await enqueueMutation("DELETE_SET", {
+          setId,
+          remainingSets: targetEx ? targetEx.sets : [],
+        });
         return;
       }
 
       // Sync renumbered set numbers in Supabase so database matches memory
-      const targetEx = updatedExercises.find((e) => e.id === exerciseId);
       if (targetEx && targetEx.sets.length > 0) {
         for (const s of targetEx.sets) {
-          await supabase
-            .from("workout_sets")
-            .update({ set_number: s.setNumber })
-            .eq("id", s.id);
+          if (isValidUUID(s.id)) {
+            await supabase
+              .from("workout_sets")
+              .update({ set_number: s.setNumber })
+              .eq("id", s.id);
+          }
         }
       }
     } catch (err: any) {
-      console.error("deleteSet exception:", err);
-      set({ currentDetail: prevDetail, error: err?.message || "Failed to delete set" });
+      console.warn("deleteSet exception, enqueuing offline mutation:", err);
+      await enqueueMutation("DELETE_SET", {
+        setId,
+        remainingSets: targetEx ? targetEx.sets : [],
+      });
     }
   },
 
@@ -348,6 +356,11 @@ export const useWorkoutStore = create<WorkoutState>()(
     // Explicitly preserve 0 lbs (e.g. bodyweight pull-ups, planks)
     const weight = defaultWeight ?? (!isNaN(prevWeightNum) ? prevWeightNum : ghostDefaults.ghostWeight);
 
+    const fallbackSetId =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `set-${Date.now()}-${newSetNumber}`;
+
     try {
       const { data, error } = await supabase
         .from("workout_sets")
@@ -362,13 +375,9 @@ export const useWorkoutStore = create<WorkoutState>()(
         .select()
         .single();
 
-      if (error || !data) {
-        console.warn("Error inserting set in Supabase:", error?.message);
-        return;
-      }
-
+      const finalSetId = data?.id || fallbackSetId;
       const newSet: DetailSetItem = {
-        id: data.id,
+        id: finalSetId,
         setNumber: newSetNumber,
         reps: String(reps),
         weight: String(weight),
@@ -378,10 +387,43 @@ export const useWorkoutStore = create<WorkoutState>()(
       const updatedExercises = currentDetail.exercises.map((ex) =>
         ex.id === exerciseId ? { ...ex, sets: [...ex.sets, newSet] } : ex
       );
-
       set({ currentDetail: { ...currentDetail, exercises: updatedExercises } });
+
+      if (error || !data) {
+        console.warn("Notice inserting set in Supabase, enqueuing offline mutation:", error?.message);
+        await enqueueMutation("ADD_SET", {
+          id: isValidUUID(finalSetId) ? finalSetId : undefined,
+          workoutId,
+          exerciseId,
+          setNumber: newSetNumber,
+          reps,
+          weight,
+          isCompleted: true,
+        });
+      }
     } catch (err) {
-      console.error("addSetToExercise exception:", err);
+      console.warn("addSetToExercise exception, enqueuing offline mutation:", err);
+      const newSet: DetailSetItem = {
+        id: fallbackSetId,
+        setNumber: newSetNumber,
+        reps: String(reps),
+        weight: String(weight),
+        isCompleted: true,
+      };
+      const updatedExercises = currentDetail.exercises.map((ex) =>
+        ex.id === exerciseId ? { ...ex, sets: [...ex.sets, newSet] } : ex
+      );
+      set({ currentDetail: { ...currentDetail, exercises: updatedExercises } });
+
+      await enqueueMutation("ADD_SET", {
+        id: isValidUUID(fallbackSetId) ? fallbackSetId : undefined,
+        workoutId,
+        exerciseId,
+        setNumber: newSetNumber,
+        reps,
+        weight,
+        isCompleted: true,
+      });
     }
   },
 
@@ -485,7 +527,6 @@ export const useWorkoutStore = create<WorkoutState>()(
 
   updateWorkoutNotes: async (workoutId: string, notes: string) => {
     const { currentDetail } = get();
-    const prevDetail = currentDetail;
 
     if (currentDetail && currentDetail.id === workoutId) {
       set({ currentDetail: { ...currentDetail, notes } });
@@ -498,20 +539,29 @@ export const useWorkoutStore = create<WorkoutState>()(
         .eq("id", workoutId);
 
       if (error) {
-        console.warn("Error updating notes in Supabase:", error.message);
-        if (prevDetail) set({ currentDetail: prevDetail, error: error.message });
-        return { success: false, error: error.message };
+        console.warn("Notice updating notes in Supabase, enqueuing offline mutation:", error.message);
+        await enqueueMutation("UPDATE_WORKOUT_NOTES", { workoutId, notes });
+        return { success: true };
       }
       return { success: true };
     } catch (err: any) {
-      console.error("updateWorkoutNotes exception:", err);
-      if (prevDetail) set({ currentDetail: prevDetail });
-      return { success: false, error: err?.message || "Failed to update notes" };
+      console.warn("updateWorkoutNotes exception, enqueuing offline mutation:", err);
+      await enqueueMutation("UPDATE_WORKOUT_NOTES", { workoutId, notes });
+      return { success: true };
     }
   },
 
   deleteWorkout: async (workoutId: string) => {
     set({ isSaving: true });
+
+    // Optimistically remove from feed and clear currentDetail
+    const { workouts } = get();
+    set({
+      workouts: workouts.filter((w) => w.id !== workoutId),
+      currentDetail: null,
+      isSaving: false,
+    });
+
     try {
       const { error } = await supabase
         .from("workouts")
@@ -519,24 +569,16 @@ export const useWorkoutStore = create<WorkoutState>()(
         .eq("id", workoutId);
 
       if (error) {
-        console.warn("Error deleting workout from Supabase:", error.message);
-        set({ isSaving: false });
-        return { success: false, error: error.message };
+        console.warn("Notice deleting workout from Supabase, enqueuing offline mutation:", error.message);
+        await enqueueMutation("DELETE_WORKOUT", { workoutId });
+        return { success: true };
       }
-
-      // Remove from feed and clear currentDetail
-      const { workouts } = get();
-      set({
-        workouts: workouts.filter((w) => w.id !== workoutId),
-        currentDetail: null,
-        isSaving: false,
-      });
 
       return { success: true };
     } catch (err: any) {
-      console.error("deleteWorkout exception:", err);
-      set({ isSaving: false });
-      return { success: false, error: err?.message || "Failed to delete workout" };
+      console.warn("deleteWorkout exception, enqueuing offline mutation:", err);
+      await enqueueMutation("DELETE_WORKOUT", { workoutId });
+      return { success: true };
     }
   },
     }),
