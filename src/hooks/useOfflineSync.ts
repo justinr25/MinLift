@@ -1,5 +1,5 @@
 import { useEffect, useCallback } from "react";
-import { Platform } from "react-native";
+import { Platform, AppState, AppStateStatus } from "react-native";
 import { useSyncStore } from "../stores/sync-store";
 
 export function useOfflineSync() {
@@ -33,13 +33,37 @@ export function useOfflineSync() {
     if (Platform.OS === "web" && typeof window !== "undefined") {
       window.addEventListener("online", handleOnline);
       window.addEventListener("offline", handleOffline);
+    }
 
-      return () => {
+    // Native AppState listener: refresh & sync when app comes to foreground
+    const subscription = AppState.addEventListener(
+      "change",
+      (nextState: AppStateStatus) => {
+        if (nextState === "active") {
+          checkConnection().then((online) => {
+            refreshPendingCount();
+            if (online) {
+              syncPendingMutations();
+            }
+          });
+        }
+      }
+    );
+
+    return () => {
+      if (Platform.OS === "web" && typeof window !== "undefined") {
         window.removeEventListener("online", handleOnline);
         window.removeEventListener("offline", handleOffline);
-      };
-    }
-  }, [handleOnline, handleOffline, refreshPendingCount, checkConnection]);
+      }
+      subscription.remove();
+    };
+  }, [
+    handleOnline,
+    handleOffline,
+    refreshPendingCount,
+    checkConnection,
+    syncPendingMutations,
+  ]);
 
   return {
     isOnline,

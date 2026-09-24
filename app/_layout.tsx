@@ -5,9 +5,11 @@ import { Stack, useRouter, useSegments, Href } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useAuthStore } from "../src/stores/auth-store";
+import { useOfflineSync } from "../src/hooks/useOfflineSync";
 
 function RootLayoutNav() {
   const { session, isInitialized, initialize } = useAuthStore();
+  useOfflineSync(); // Keep offline mutation queue & network connectivity synchronized globally across all tabs
   const segments = useSegments();
   const router = useRouter();
 

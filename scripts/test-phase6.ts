@@ -7,6 +7,9 @@ import {
   removeMutation,
   clearQueue,
   processMutationQueue,
+  getDeadLetterMutations,
+  clearDeadLetters,
+  isValidUUID,
 } from "../src/lib/offline-queue";
 import { useSyncStore } from "../src/stores/sync-store";
 
@@ -298,13 +301,89 @@ async function runPhase6Audit() {
   const remainingCount = await getPendingCount();
   assert(remainingCount === 0, "Queue is empty (0 pending) after successful sync");
 
+  // 4b. Test non-UUID client ID sanitization in SYNC_WORKOUT
+  console.log("\n[4b] Testing Non-UUID Client ID Sanitization in SYNC_WORKOUT...");
+  const nonUuidWorkoutId = `offline-w-${Date.now()}`;
+  const nonUuidSetId = `set-${Date.now()}-1`;
+
+  await enqueueMutation("SYNC_WORKOUT", {
+    workout: {
+      id: nonUuidWorkoutId, // non-UUID client string!
+      userId,
+      workoutTypeId,
+      locationId: null,
+      startedAt: new Date(Date.now() - 1800000).toISOString(),
+      completedAt: new Date().toISOString(),
+      notes: "Workout with non-UUID client IDs",
+    },
+    sets: [
+      {
+        id: nonUuidSetId, // non-UUID set string!
+        exerciseId: testExId,
+        setNumber: 1,
+        weight: 175,
+        reps: 10,
+        isCompleted: true,
+      },
+    ],
+  });
+
+  const syncNonUuidRes = await processMutationQueue();
+  assert(syncNonUuidRes.processed === 1, "SYNC_WORKOUT with non-UUID client IDs succeeds without Postgres crash");
+  assert(syncNonUuidRes.errors === 0, "Non-UUID IDs omitted and replaced with valid Postgres UUIDs");
+
+  // 4c. Test Poison Pill Eviction to Dead-Letter Queue (DLQ)
+  console.log("\n[4c] Testing Poison Pill Eviction to Dead-Letter Queue (DLQ)...");
+  await clearDeadLetters();
+  // Enqueue an intentionally failing mutation (violates foreign key constraint)
+  await enqueueMutation("ADD_SET", {
+    workoutId: "00000000-0000-0000-0000-000000000999", // non-existent workout ID
+    exerciseId: testExId,
+    setNumber: 99,
+    reps: 10,
+    weight: 100,
+    isCompleted: true,
+  });
+
+  // Replay 1st time
+  const retry1 = await processMutationQueue();
+  assert(retry1.errors === 1, "Poison pill fails attempt 1");
+
+  // Replay 2nd time
+  const retry2 = await processMutationQueue();
+  assert(retry2.errors === 1, "Poison pill fails attempt 2");
+
+  // Replay 3rd time -> should evict to DLQ
+  const retry3 = await processMutationQueue();
+  assert(retry3.errors === 1, "Poison pill fails attempt 3 (reaches MAX_MUTATION_RETRIES)");
+
+  const queueAfterDlq = await getPendingCount();
+  assert(queueAfterDlq === 0, "Queue unblocked: poison pill evicted from pending queue");
+
+  const dlqItems = await getDeadLetterMutations();
+  assert(dlqItems.length === 1, "Dead letter queue contains evicted poison pill");
+  assert(dlqItems[0].retryCount >= 3, "Dead letter item recorded max retries");
+  await clearDeadLetters();
+
   // -----------------------------------------------------------------
   // 5. USE_SYNC_STORE & CONNECTIVITY LOGIC
   // -----------------------------------------------------------------
   console.log("\n[5/7] Testing useSyncStore State & Connection Methods...");
 
-  await useSyncStore.getState().refreshPendingCount();
-  assert(useSyncStore.getState().pendingCount === 0, "useSyncStore pendingCount is 0");
+  // Real-time queue listener check
+  await enqueueMutation("UPDATE_WORKOUT_NOTES", {
+    workoutId: testWorkoutId,
+    notes: "Real-time sync count test",
+  });
+  assert(
+    useSyncStore.getState().pendingCount === 1,
+    "useSyncStore.pendingCount automatically updates via onQueueChange event"
+  );
+  await clearQueue();
+  assert(
+    useSyncStore.getState().pendingCount === 0,
+    "useSyncStore.pendingCount updates to 0 after clearQueue()"
+  );
 
   const isConnected = await useSyncStore.getState().checkConnection();
   assert(typeof isConnected === "boolean", "checkConnection() returns boolean connectivity status");
