@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { Profile } from "../types/database";
+import { enqueueMutation } from "../lib/offline-queue";
 
 export const DEMO_USER_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -22,6 +23,7 @@ interface AuthState {
     displayName: string
   ) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
+  updatePreferredUnit: (unit: "lbs" | "kg") => Promise<{ success: boolean; error?: string }>;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -215,6 +217,53 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return { error: err };
     } finally {
       set({ isLoading: false });
+    }
+  },
+
+  updatePreferredUnit: async (unit: "lbs" | "kg") => {
+    const { user, isDemo, profile } = get();
+
+    // 1. Optimistic local state update
+    if (profile) {
+      set({
+        profile: {
+          ...profile,
+          preferred_weight_unit: unit,
+          updated_at: new Date().toISOString(),
+        },
+      });
+    }
+
+    if (!user || isDemo || user.id === DEMO_USER_ID) {
+      return { success: true };
+    }
+
+    // 2. Persist to Supabase
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          preferred_weight_unit: unit,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id);
+
+      if (error) {
+        console.warn("Notice updating preferred unit:", error.message);
+        await enqueueMutation("UPDATE_PREFERENCES", {
+          userId: user.id,
+          preferredWeightUnit: unit,
+        });
+        return { success: true };
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      await enqueueMutation("UPDATE_PREFERENCES", {
+        userId: user.id,
+        preferredWeightUnit: unit,
+      });
+      return { success: true };
     }
   },
 
