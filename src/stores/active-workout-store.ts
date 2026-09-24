@@ -38,6 +38,7 @@ export interface ActiveExercise {
   id: string; // exercise_id from db
   name: string;
   category: string;
+  notes?: string | null;
   sets: ActiveSet[];
 }
 
@@ -59,7 +60,7 @@ export interface ActiveWorkoutState {
     locationName?: string | null;
   }) => void;
   discardWorkout: () => void;
-  addExercise: (exercise: { id: string; name: string; category?: string }) => void;
+  addExercise: (exercise: { id: string; name: string; category?: string; notes?: string | null }) => void;
   removeExercise: (exerciseId: string) => void;
   addSet: (exerciseId: string) => void;
   removeSet: (exerciseId: string, setId: string) => void;
@@ -134,6 +135,7 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()(
               id: exercise.id,
               name: exercise.name,
               category: exercise.category || "Other",
+              notes: exercise.notes || null,
               sets: [initialSet],
             },
           ],

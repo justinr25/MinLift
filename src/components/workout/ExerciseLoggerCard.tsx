@@ -46,6 +46,21 @@ export const ExerciseLoggerCard: React.FC<ExerciseLoggerCardProps> = ({
         </TouchableOpacity>
       </View>
 
+      {/* Persistent Form Cues / Machine Notes */}
+      {exercise.notes ? (
+        <View className="mb-2 bg-canvas px-3 py-2 rounded-lg border border-border-subtle flex-row items-start">
+          <Ionicons
+            name="document-text-outline"
+            size={14}
+            color="#6B7280"
+            style={{ marginTop: 2, marginRight: 6 }}
+          />
+          <Text className="text-[12px] text-secondary leading-4 flex-1">
+            {exercise.notes}
+          </Text>
+        </View>
+      ) : null}
+
       {/* Table Column Headers */}
       <View className="flex-row items-center justify-between py-2 border-b border-border-subtle/60">
         <Text className="w-8 text-center text-[12px] font-semibold text-muted uppercase">
