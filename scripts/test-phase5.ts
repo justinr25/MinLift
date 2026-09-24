@@ -374,7 +374,7 @@ async function runPhase5Audit() {
   useActiveWorkoutStore.getState().discardWorkout();
 
   // Verify Zustand persist storage for exercise-store
-  const persistedRaw = (global as any).window?.localStorage?.getItem("minlift-exercise-storage");
+  const persistedRaw = (globalThis as any).window?.localStorage?.getItem("minlift-exercise-storage");
   assert(!!persistedRaw, "minlift-exercise-storage exists in localStorage cache");
   if (persistedRaw) {
     const parsed = JSON.parse(persistedRaw);

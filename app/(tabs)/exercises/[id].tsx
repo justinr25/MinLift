@@ -59,8 +59,10 @@ export default function ExerciseDetailScreen() {
   const handleNotesBlur = async () => {
     if (!id) return;
     if (notes !== (currentExercise?.notes || "")) {
-      await updateExerciseNotes(id, notes);
-      setIsNotesSaved(true);
+      const res = await updateExerciseNotes(id, notes);
+      if (res.success) {
+        setIsNotesSaved(true);
+      }
     }
   };
 
@@ -176,6 +178,7 @@ export default function ExerciseDetailScreen() {
                 <TouchableOpacity
                   key={template.id}
                   activeOpacity={0.7}
+                  hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
                   onPress={() => handleToggleTemplate(template.id)}
                   className={`px-3.5 py-1.5 mr-2 mb-2 rounded-full border flex-row items-center ${
                     isLinked
@@ -257,7 +260,10 @@ export default function ExerciseDetailScreen() {
 
                 {/* Right: Metrics string */}
                 <Text className="text-[14px] font-mono font-medium text-secondary">
-                  {session.totalSets} {session.totalSets === 1 ? "set" : "sets"} • Max {session.maxWeight} lbs • {session.bestReps} reps
+                  {session.totalSets} {session.totalSets === 1 ? "set" : "sets"} •{" "}
+                  {session.maxWeight === 0
+                    ? `BW (${session.bestReps} reps)`
+                    : `Max ${session.maxWeight} lbs • ${session.bestReps} reps`}
                 </Text>
               </View>
             ))

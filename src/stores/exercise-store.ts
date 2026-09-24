@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "../lib/supabase";
-import { useAuthStore } from "./auth-store";
+import { useAuthStore, DEMO_USER_ID } from "./auth-store";
 
 export interface ExerciseItem {
   id: string;
@@ -95,6 +95,7 @@ interface ExerciseState {
     workoutTypeId: string
   ) => Promise<{ success: boolean; linked: boolean; error?: string }>;
   archiveExercise: (exerciseId: string) => Promise<{ success: boolean; error?: string }>;
+  resetExerciseStore: () => void;
 }
 
 export const useExerciseStore = create<ExerciseState>()(
@@ -130,24 +131,31 @@ export const useExerciseStore = create<ExerciseState>()(
             return;
           }
 
-          // 2. Auto-seed default exercises if user has 0 exercises and is a valid UUID user
+          // 2. Auto-seed default exercises ONLY if user has 0 total exercises in DB (active + archived) and is a valid UUID user
           const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id);
           if ((!exercisesData || exercisesData.length === 0) && isUUID) {
-            const seedPayload = DEFAULT_EXERCISES.map((e) => ({
-              user_id: user.id,
-              name: e.name,
-              category: e.category,
-              is_archived: false,
-            }));
-
-            const { data: seeded, error: seedError } = await supabase
+            const { count: totalCount } = await supabase
               .from("exercises")
-              .insert(seedPayload)
-              .select("*")
-              .order("name", { ascending: true });
+              .select("id", { count: "exact", head: true })
+              .eq("user_id", user.id);
 
-            if (!seedError && seeded) {
-              exercisesData = seeded;
+            if (totalCount === 0) {
+              const seedPayload = DEFAULT_EXERCISES.map((e) => ({
+                user_id: user.id,
+                name: e.name,
+                category: e.category,
+                is_archived: false,
+              }));
+
+              const { data: seeded, error: seedError } = await supabase
+                .from("exercises")
+                .insert(seedPayload)
+                .select("*")
+                .order("name", { ascending: true });
+
+              if (!seedError && seeded) {
+                exercisesData = seeded;
+              }
             }
           }
 
@@ -407,13 +415,32 @@ export const useExerciseStore = create<ExerciseState>()(
       },
 
       createExercise: async ({ name, category, notes }) => {
-        const user = useAuthStore.getState().user;
+        const { user, isDemo } = useAuthStore.getState();
         if (!user) return { success: false, error: "Not authenticated" };
 
         const trimmedName = name.trim();
         if (!trimmedName) return { success: false, error: "Exercise name is required" };
 
         set({ isSaving: true });
+
+        // Immediate local handling for demo guest
+        if (isDemo || user.id === DEMO_USER_ID) {
+          const fallbackItem: ExerciseItem = {
+            id: `custom-ex-${Date.now()}`,
+            userId: user.id,
+            name: trimmedName,
+            category: category.trim() || "Other",
+            notes: notes?.trim() || null,
+            isArchived: false,
+            createdAt: new Date().toISOString(),
+            lastPerformedAt: null,
+            lastWeightLifted: null,
+            lastReps: null,
+          };
+          const updated = [fallbackItem, ...get().exercises];
+          set({ exercises: updated, isSaving: false });
+          return { success: true, exercise: fallbackItem };
+        }
 
         try {
           const { data, error } = await supabase
@@ -429,7 +456,7 @@ export const useExerciseStore = create<ExerciseState>()(
             .single();
 
           if (error || !data) {
-            // Local fallback for guest
+            // Local fallback
             const fallbackItem: ExerciseItem = {
               id: `custom-ex-${Date.now()}`,
               userId: user.id,
@@ -472,6 +499,7 @@ export const useExerciseStore = create<ExerciseState>()(
 
       updateExerciseNotes: async (exerciseId: string, notes: string) => {
         const trimmed = notes.trim();
+        const { isDemo, user } = useAuthStore.getState();
 
         // 1. Optimistic update
         const exercises = get().exercises.map((e) =>
@@ -483,6 +511,10 @@ export const useExerciseStore = create<ExerciseState>()(
             : get().currentExercise;
 
         set({ exercises, currentExercise });
+
+        if (isDemo || user?.id === DEMO_USER_ID) {
+          return { success: true };
+        }
 
         // 2. Persist to Supabase
         try {
@@ -503,6 +535,7 @@ export const useExerciseStore = create<ExerciseState>()(
       },
 
       toggleLinkedTemplate: async (exerciseId: string, workoutTypeId: string) => {
+        const { isDemo, user } = useAuthStore.getState();
         const currentLinked = get().linkedTemplateIds[exerciseId] || [];
         const isLinked = currentLinked.includes(workoutTypeId);
 
@@ -517,6 +550,10 @@ export const useExerciseStore = create<ExerciseState>()(
             [exerciseId]: nextLinked,
           },
         });
+
+        if (isDemo || user?.id === DEMO_USER_ID) {
+          return { success: true, linked: !isLinked };
+        }
 
         // 2. Persist to Supabase
         try {
@@ -554,10 +591,17 @@ export const useExerciseStore = create<ExerciseState>()(
 
       archiveExercise: async (exerciseId: string) => {
         set({ isSaving: true });
+        const { isDemo, user } = useAuthStore.getState();
+        const prevExercises = get().exercises;
 
         // 1. Optimistically filter from active list
-        const updated = get().exercises.filter((e) => e.id !== exerciseId);
+        const updated = prevExercises.filter((e) => e.id !== exerciseId);
         set({ exercises: updated });
+
+        if (isDemo || user?.id === DEMO_USER_ID) {
+          set({ isSaving: false });
+          return { success: true };
+        }
 
         // 2. Persist to Supabase
         try {
@@ -570,15 +614,30 @@ export const useExerciseStore = create<ExerciseState>()(
 
           if (error) {
             console.warn("Error archiving exercise in Supabase:", error.message);
+            // Rollback optimistic update
+            set({ exercises: prevExercises });
             return { success: false, error: error.message };
           }
 
           return { success: true };
         } catch (err: any) {
           console.error("archiveExercise exception:", err);
-          set({ isSaving: false });
+          set({ exercises: prevExercises, isSaving: false });
           return { success: false, error: err?.message || "Failed to archive exercise" };
         }
+      },
+
+      resetExerciseStore: () => {
+        set({
+          exercises: [],
+          availableTemplates: [],
+          linkedTemplateIds: {},
+          performanceHistory: {},
+          currentExercise: null,
+          isLoading: false,
+          isSaving: false,
+          error: null,
+        });
       },
     }),
     {
@@ -588,6 +647,7 @@ export const useExerciseStore = create<ExerciseState>()(
         exercises: state.exercises,
         availableTemplates: state.availableTemplates,
         linkedTemplateIds: state.linkedTemplateIds,
+        performanceHistory: state.performanceHistory,
       }),
     }
   )

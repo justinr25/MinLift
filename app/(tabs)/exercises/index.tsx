@@ -184,6 +184,7 @@ export default function ExercisesCatalogScreen() {
       <ScrollView
         className="flex-1 px-5 pt-2"
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingBottom: 100 }}
         refreshControl={
           <RefreshControl
@@ -248,7 +249,9 @@ export default function ExercisesCatalogScreen() {
                 <View className="flex-row items-center">
                   <Text className="text-[15px] font-mono font-bold text-primary mr-2">
                     {ex.lastWeightLifted !== null && ex.lastWeightLifted !== undefined
-                      ? `${ex.lastWeightLifted} lbs`
+                      ? ex.lastWeightLifted === 0
+                        ? "BW"
+                        : `${ex.lastWeightLifted} lbs`
                       : "—"}
                   </Text>
                   <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
@@ -262,7 +265,12 @@ export default function ExercisesCatalogScreen() {
         <View className="mt-2 mb-8">
           <DashedActionCard
             label="Create New Exercise"
-            onPress={() => setShowCreateModal(true)}
+            onPress={() => {
+              if (searchQuery.trim()) {
+                setNewExerciseName(searchQuery.trim());
+              }
+              setShowCreateModal(true);
+            }}
           />
         </View>
       </ScrollView>
@@ -278,79 +286,85 @@ export default function ExercisesCatalogScreen() {
           behavior={Platform.OS === "ios" ? "padding" : "height"}
           className="flex-1 bg-black/50 justify-end"
         >
-          <View className="bg-white rounded-t-3xl p-6 border-t border-border-subtle">
-            {/* Modal Header */}
-            <View className="flex-row items-center justify-between mb-4">
-              <Text className="text-[20px] font-bold text-primary">
-                Create Exercise
-              </Text>
-              <TouchableOpacity
-                activeOpacity={0.7}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                onPress={() => setShowCreateModal(false)}
-                className="w-8 h-8 rounded-full bg-surface items-center justify-center"
-              >
-                <Ionicons name="close" size={18} color="#000000" />
-              </TouchableOpacity>
-            </View>
+          <View className="bg-white rounded-t-3xl border-t border-border-subtle max-h-[88%]">
+            <ScrollView
+              contentContainerStyle={{ padding: 24, paddingBottom: 40 }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Modal Header */}
+              <View className="flex-row items-center justify-between mb-4">
+                <Text className="text-[20px] font-bold text-primary">
+                  Create Exercise
+                </Text>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  onPress={() => setShowCreateModal(false)}
+                  className="w-8 h-8 rounded-full bg-surface items-center justify-center"
+                >
+                  <Ionicons name="close" size={18} color="#000000" />
+                </TouchableOpacity>
+              </View>
 
-            {/* Exercise Name Input */}
-            <View className="mb-4">
-              <Text className="text-[12px] font-semibold text-muted uppercase tracking-wider mb-1.5">
-                Exercise Name
-              </Text>
-              <TextInput
-                value={newExerciseName}
-                onChangeText={setNewExerciseName}
-                placeholder="e.g. Incline Dumbbell Press"
-                placeholderTextColor="#9CA3AF"
-                className="h-[50px] bg-surface rounded-xl border border-border-subtle px-4 text-[15px] text-primary"
-                autoFocus
+              {/* Exercise Name Input */}
+              <View className="mb-4">
+                <Text className="text-[12px] font-semibold text-muted uppercase tracking-wider mb-1.5">
+                  Exercise Name
+                </Text>
+                <TextInput
+                  value={newExerciseName}
+                  onChangeText={setNewExerciseName}
+                  placeholder="e.g. Incline Dumbbell Press"
+                  placeholderTextColor="#9CA3AF"
+                  className="h-[50px] bg-surface rounded-xl border border-border-subtle px-4 text-[15px] text-primary"
+                  autoFocus
+                />
+              </View>
+
+              {/* Muscle Category Picker */}
+              <View className="mb-4">
+                <Text className="text-[12px] font-semibold text-muted uppercase tracking-wider mb-1.5">
+                  Target Muscle Group
+                </Text>
+                <ChipPicker
+                  options={ORDERED_CATEGORIES}
+                  selected={newExerciseCategory}
+                  onSelect={setNewExerciseCategory}
+                />
+              </View>
+
+              {/* Form Cues & Machine Notes Input */}
+              <View className="mb-5">
+                <Text className="text-[12px] font-semibold text-muted uppercase tracking-wider mb-1.5">
+                  Form Cues / Machine Notes (Optional)
+                </Text>
+                <TextInput
+                  value={newExerciseNotes}
+                  onChangeText={setNewExerciseNotes}
+                  placeholder="e.g. Seat height 4, elbows tucked 45 degrees, slow eccentric"
+                  placeholderTextColor="#9CA3AF"
+                  multiline
+                  numberOfLines={3}
+                  className="min-h-[75px] bg-surface rounded-xl border border-border-subtle p-3 text-[14px] text-primary"
+                  textAlignVertical="top"
+                />
+              </View>
+
+              {/* Error Message */}
+              {createError ? (
+                <Text className="text-danger text-[13px] font-medium mb-3 text-center">
+                  {createError}
+                </Text>
+              ) : null}
+
+              {/* Create Action Button */}
+              <PrimaryButton
+                title="Create Exercise"
+                loading={isSaving}
+                onPress={handleCreateExercise}
               />
-            </View>
-
-            {/* Muscle Category Picker */}
-            <View className="mb-4">
-              <Text className="text-[12px] font-semibold text-muted uppercase tracking-wider mb-1.5">
-                Target Muscle Group
-              </Text>
-              <ChipPicker
-                options={ORDERED_CATEGORIES}
-                selected={newExerciseCategory}
-                onSelect={setNewExerciseCategory}
-              />
-            </View>
-
-            {/* Form Cues & Machine Notes Input */}
-            <View className="mb-5">
-              <Text className="text-[12px] font-semibold text-muted uppercase tracking-wider mb-1.5">
-                Form Cues / Machine Notes (Optional)
-              </Text>
-              <TextInput
-                value={newExerciseNotes}
-                onChangeText={setNewExerciseNotes}
-                placeholder="e.g. Seat height 4, elbows tucked 45 degrees, slow eccentric"
-                placeholderTextColor="#9CA3AF"
-                multiline
-                numberOfLines={3}
-                className="min-h-[75px] bg-surface rounded-xl border border-border-subtle p-3 text-[14px] text-primary"
-                textAlignVertical="top"
-              />
-            </View>
-
-            {/* Error Message */}
-            {createError ? (
-              <Text className="text-danger text-[13px] font-medium mb-3 text-center">
-                {createError}
-              </Text>
-            ) : null}
-
-            {/* Create Action Button */}
-            <PrimaryButton
-              title="Create Exercise"
-              loading={isSaving}
-              onPress={handleCreateExercise}
-            />
+            </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </Modal>
