@@ -83,6 +83,7 @@ export default function ProfileTabScreen() {
         .from("workouts")
         .select("id, completed_at")
         .eq("user_id", user.id)
+        .is("deleted_at", null)
         .not("completed_at", "is", null);
 
       const totalWorkouts = workoutsData?.length || 0;
@@ -102,11 +103,13 @@ export default function ProfileTabScreen() {
           workouts!inner (
             id,
             completed_at,
-            user_id
+            user_id,
+            deleted_at
           )
         `)
         .eq("is_completed", true)
         .eq("workouts.user_id", user.id)
+        .is("workouts.deleted_at", null)
         .not("workouts.completed_at", "is", null)
         .gte("workouts.completed_at", fiveWeeksAgo.toISOString());
 
@@ -129,19 +132,16 @@ export default function ProfileTabScreen() {
         4: new Set(),
       };
 
-      let allTimeVol = 0;
-
       if (setsData) {
         setsData.forEach((s: any) => {
           const w = s.workouts;
           if (!w || !w.completed_at) return;
           const completedMs = new Date(w.completed_at).getTime();
-          const diffMs = nowTime - completedMs;
+          const diffMs = Math.max(0, nowTime - completedMs);
           const weekIndexFromNow = Math.floor(diffMs / ONE_WEEK_MS); // 0 = This Wk, 1 = W-1, ...
           const bucketIdx = 4 - weekIndexFromNow;
 
           const setVolume = (Number(s.weight) || 0) * (Number(s.reps) || 0);
-          allTimeVol += setVolume;
 
           if (bucketIdx >= 0 && bucketIdx < 5) {
             buckets[bucketIdx].volume += setVolume;
@@ -154,10 +154,19 @@ export default function ProfileTabScreen() {
         buckets[i].sessionCount = sessionCountMap[i].size;
       }
 
+      const fiveWeekVol = buckets.reduce((acc, b) => acc + b.volume, 0);
       setWeeklyBuckets(buckets);
-      setTotalVolumeAllTime(allTimeVol);
+      setTotalVolumeAllTime(fiveWeekVol);
     } catch (err) {
-      console.warn("Notice loading profile volume stats:", err);
+      console.warn("Notice loading profile volume stats from Supabase, attempting local store fallback:", err);
+      // Fallback: estimate stats from cached workout-store sessions
+      try {
+        const { useWorkoutStore } = await import("../../src/stores/workout-store");
+        const localWorkouts = useWorkoutStore.getState().workouts || [];
+        setTotalSessionsAllTime(localWorkouts.length);
+      } catch (localErr) {
+        console.warn("Could not calculate local volume stats:", localErr);
+      }
     } finally {
       setIsLoadingStats(false);
     }
@@ -176,8 +185,18 @@ export default function ProfileTabScreen() {
     setIsUpdatingUnit(false);
   };
 
+  const handleSyncPress = async () => {
+    await syncNow();
+    await fetchVolumeStats();
+  };
+
   const handlePromptSignOut = () => {
-    const message = "Are you sure you want to sign out of MinLift?";
+    let message = "Are you sure you want to sign out of MinLift?";
+    if (pendingCount > 0) {
+      message = `You have ${pendingCount} unsynced offline mutation${
+        pendingCount === 1 ? "" : "s"
+      }. Signing out now may result in unsynced workout data being lost. Are you sure you want to sign out?`;
+    }
 
     if (Platform.OS === "web") {
       if (typeof window !== "undefined" && window.confirm(message)) {
@@ -278,10 +297,9 @@ export default function ProfileTabScreen() {
                     barHeight = Math.max(Math.round(ratio * 75), 12);
                     isPeak = bucket.volume === maxWeeklyVolume && bucket.volume > 0;
                   } else {
-                    // Aesthetic baseline placeholder bars matching Wireframe 11 when 0 logged workouts
-                    const placeholderHeights = [18, 32, 65, 24, 38];
-                    barHeight = placeholderHeights[idx];
-                    isPeak = idx === 2; // Middle bar highlighted
+                    // Minimal flat baseline bars when 0 logged volume in 5-week window
+                    barHeight = 6;
+                    isPeak = false;
                   }
 
                   return (
@@ -290,7 +308,11 @@ export default function ProfileTabScreen() {
                       <View
                         style={{ height: barHeight, width: 34 }}
                         className={`rounded-md transition-all ${
-                          isPeak ? "bg-primary" : "bg-[#E5E7EB]"
+                          isPeak
+                            ? "bg-primary"
+                            : hasAnyVolume
+                            ? "bg-[#E5E7EB]"
+                            : "bg-border-subtle"
                         }`}
                       />
                       {/* Bucket Label */}
@@ -321,7 +343,7 @@ export default function ProfileTabScreen() {
 
                 <View className="items-end">
                   <Text className="text-[11px] text-muted uppercase font-semibold">
-                    Total Sessions
+                    All-Time Sessions
                   </Text>
                   <Text className="text-[15px] font-mono font-bold text-primary mt-0.5">
                     {totalSessionsAllTime} {totalSessionsAllTime === 1 ? "workout" : "workouts"}
@@ -369,7 +391,7 @@ export default function ProfileTabScreen() {
             {/* Row 2: Backup & Sync matching Wireframe 11 */}
             <TouchableOpacity
               activeOpacity={0.7}
-              onPress={syncNow}
+              onPress={handleSyncPress}
               disabled={isSyncing}
               className="flex-row items-center justify-between p-4"
             >

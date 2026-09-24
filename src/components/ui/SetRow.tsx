@@ -1,6 +1,8 @@
 import React from "react";
 import { View, Text, TextInput, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useAuthStore } from "../../stores/auth-store";
+import { getUnitLabel } from "../../lib/units";
 
 export interface SetRowProps {
   setNumber: number;
@@ -13,6 +15,7 @@ export interface SetRowProps {
   onWeightChange?: (text: string) => void;
   onToggleComplete?: () => void;
   editable?: boolean;
+  weightUnit?: "lbs" | "kg";
   className?: string;
 }
 
@@ -27,8 +30,11 @@ export function SetRow({
   onWeightChange,
   onToggleComplete,
   editable = true,
+  weightUnit,
   className = "",
 }: SetRowProps) {
+  const profileUnit = useAuthStore((s) => s.profile?.preferred_weight_unit);
+  const unitLabel = getUnitLabel(weightUnit || profileUnit);
   const repsDisplay = reps !== null && reps !== undefined && reps !== "" ? String(reps) : "";
   const weightDisplay = weight !== null && weight !== undefined && weight !== "" ? String(weight) : "";
 
@@ -82,13 +88,13 @@ export function SetRow({
               className="h-[44px] bg-canvas rounded-md border border-border-subtle text-center text-[16px] font-mono text-primary px-2 pr-8"
             />
             <Text className="absolute right-2 text-[12px] text-muted font-medium pointer-events-none">
-              lbs
+              {unitLabel}
             </Text>
           </View>
         ) : (
           <View className="h-[44px] bg-surface rounded-md border border-border-subtle items-center justify-center px-2">
             <Text className="text-[16px] font-mono text-primary">
-              {weightDisplay ? `${weightDisplay} lbs` : "-"}
+              {weightDisplay ? `${weightDisplay} ${unitLabel}` : "-"}
             </Text>
           </View>
         )}

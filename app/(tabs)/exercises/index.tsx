@@ -51,6 +51,7 @@ export default function ExercisesCatalogScreen() {
     fetchExercises,
     createExercise,
   } = useExerciseStore();
+  const preferredUnit = useAuthStore((s) => s.profile?.preferred_weight_unit) || "lbs";
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
@@ -251,7 +252,7 @@ export default function ExercisesCatalogScreen() {
                     {ex.lastWeightLifted !== null && ex.lastWeightLifted !== undefined
                       ? ex.lastWeightLifted === 0
                         ? "BW"
-                        : `${ex.lastWeightLifted} lbs`
+                        : `${ex.lastWeightLifted} ${preferredUnit}`
                       : "—"}
                   </Text>
                   <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />

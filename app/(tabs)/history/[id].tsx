@@ -13,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useWorkoutStore, DetailExerciseItem, DetailSetItem } from "../../../src/stores/workout-store";
+import { useAuthStore } from "../../../src/stores/auth-store";
 import { PrimaryButton } from "../../../src/components/ui/PrimaryButton";
 import { DashedActionCard } from "../../../src/components/ui/DashedActionCard";
 import { AddExerciseSheet } from "../../../src/components/workout/AddExerciseSheet";
@@ -46,6 +47,7 @@ function EditableSetRow({
   onUpdateSet: (setId: string, reps: number, weight: number) => void;
   onDeleteSet: (setId: string, exerciseId: string) => void;
 }) {
+  const preferredUnit = useAuthStore((s) => s.profile?.preferred_weight_unit) || "lbs";
   const [reps, setReps] = useState(set.reps);
   const [weight, setWeight] = useState(set.weight);
 
@@ -86,7 +88,7 @@ function EditableSetRow({
         </View>
       </View>
 
-      {/* Weight Input with lbs suffix */}
+      {/* Weight Input with unit suffix */}
       <View className="flex-1 mx-2">
         <View className="h-11 bg-white border border-border-subtle rounded-xl px-2 flex-row items-center justify-center">
           <TextInput
@@ -97,7 +99,7 @@ function EditableSetRow({
             className="flex-1 text-center text-[16px] font-mono font-bold text-primary"
             selectTextOnFocus
           />
-          <Text className="text-[12px] font-medium text-muted mr-1">lbs</Text>
+          <Text className="text-[12px] font-medium text-muted mr-1">{preferredUnit}</Text>
         </View>
       </View>
 
