@@ -380,6 +380,8 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()(
                 .select("id")
                 .eq("user_id", user.id)
                 .ilike("name", ex.name.trim())
+                .eq("is_archived", false)
+                .limit(1)
                 .maybeSingle();
 
               if (existingEx) {

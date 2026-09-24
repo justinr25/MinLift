@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
     Modal,
     View,
@@ -78,7 +78,14 @@ export const AddExerciseSheet: React.FC<AddExerciseSheetProps> = ({
     >([]);
 
     const storeExercises = useExerciseStore((state) => state.exercises);
+    const fetchExercises = useExerciseStore((state) => state.fetchExercises);
     const createExercise = useExerciseStore((state) => state.createExercise);
+
+    useEffect(() => {
+        if (visible && storeExercises.length === 0) {
+            fetchExercises();
+        }
+    }, [visible, storeExercises.length]);
 
     const categories = [
         "All",
