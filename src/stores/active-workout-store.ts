@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "../lib/supabase";
 import { useAuthStore, DEMO_USER_ID } from "./auth-store";
+import { enqueueMutation, isValidUUID } from "../lib/offline-queue";
 
 function getInitialGhostValues(name: string, category?: string): { ghostReps: number; ghostWeight: number } {
   const lowerName = (name || "").toLowerCase();
@@ -263,14 +264,91 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()(
 
         set({ isSaving: true });
 
-        try {
-          const startedAt = state.startTime
-            ? new Date(state.startTime).toISOString()
-            : new Date().toISOString();
-          const completedAt = new Date().toISOString();
+        const startedAt = state.startTime
+          ? new Date(state.startTime).toISOString()
+          : new Date().toISOString();
+        const completedAt = new Date().toISOString();
 
+        let workoutTypeId = state.workoutTypeId;
+        let locationId = state.locationId;
+
+        // Helper to fallback to offline mutation queue on network failure
+        const handleOfflineFallback = async (reason?: string) => {
+          console.warn("Network error saving workout, enqueuing to offline mutation queue:", reason);
+          try {
+            const fallbackWorkoutId =
+              typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+                ? crypto.randomUUID()
+                : undefined;
+
+            const setsPayload: any[] = [];
+            state.exercises.forEach((ex) => {
+              ex.sets.forEach((s) => {
+                const trimmedReps = String(s.reps ?? "").trim();
+                const trimmedWeight = String(s.weight ?? "").trim();
+                const parsedReps = trimmedReps !== "" ? parseInt(trimmedReps, 10) : NaN;
+                const parsedWeight = trimmedWeight !== "" ? parseFloat(trimmedWeight) : NaN;
+                const reps = !isNaN(parsedReps) ? parsedReps : (s.ghostReps ?? 0);
+                const weight = !isNaN(parsedWeight) ? parsedWeight : (s.ghostWeight ?? 0);
+
+                setsPayload.push({
+                  exerciseId: isValidUUID(ex.id) ? ex.id : undefined,
+                  setNumber: s.setNumber,
+                  reps,
+                  weight,
+                  isCompleted: s.isCompleted,
+                });
+              });
+            });
+
+            await enqueueMutation("SYNC_WORKOUT", {
+              workout: {
+                id: fallbackWorkoutId,
+                userId: user.id,
+                workoutTypeId: isValidUUID(workoutTypeId) ? workoutTypeId : undefined,
+                locationId: isValidUUID(locationId) ? locationId : null,
+                startedAt,
+                completedAt,
+                notes: null,
+              },
+              sets: setsPayload,
+            });
+
+            // Optimistically update workout history feed
+            try {
+              const { useWorkoutStore } = await import("./workout-store");
+              const { workouts } = useWorkoutStore.getState();
+              const uniqueExercises = new Set(state.exercises.map((e) => e.name));
+              const totalSetsCount = state.exercises.reduce((acc, e) => acc + e.sets.length, 0);
+
+              useWorkoutStore.setState({
+                workouts: [
+                  {
+                    id: fallbackWorkoutId || `offline-${Date.now()}`,
+                    startedAt,
+                    completedAt,
+                    workoutTypeName: state.workoutTypeName || "Workout",
+                    locationName: state.locationName || null,
+                    exerciseCount: uniqueExercises.size,
+                    totalSets: totalSetsCount,
+                  },
+                  ...workouts,
+                ],
+              });
+            } catch (histErr) {
+              console.warn("Notice updating local workout history:", histErr);
+            }
+
+            get().discardWorkout();
+            return { success: true, offline: true };
+          } catch (offlineErr: any) {
+            console.error("Offline queue fallback error:", offlineErr);
+            return { success: false, error: offlineErr?.message || "Failed to save offline workout" };
+          }
+        };
+
+        try {
           // 1. Resolve Workout Type UUID
-          let workoutTypeId = state.workoutTypeId;
           const isTypeUUID =
             workoutTypeId &&
             /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(workoutTypeId);
@@ -314,7 +392,6 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()(
           }
 
           // 2. Resolve Location UUID (ensure exists in locations table)
-          let locationId = state.locationId;
           const isLocationUUID =
             locationId &&
             /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(locationId);
@@ -356,13 +433,7 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()(
             .single();
 
           if (workoutError || !workoutData) {
-            console.error("Error inserting workout:", workoutError?.message);
-            set({ isSaving: false });
-            // DO NOT DISCARD ON ERROR! Preserves user's in-progress data.
-            return {
-              success: false,
-              error: workoutError?.message || "Failed to save workout record",
-            };
+            return await handleOfflineFallback(workoutError?.message);
           }
 
           const workoutId = workoutData.id;
@@ -429,12 +500,7 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()(
           if (setsToInsert.length > 0) {
             const { error: setsError } = await supabase.from("workout_sets").insert(setsToInsert);
             if (setsError) {
-              console.error("Error inserting workout sets:", setsError.message);
-              set({ isSaving: false });
-              return {
-                success: false,
-                error: setsError.message || "Failed to save workout sets",
-              };
+              return await handleOfflineFallback(setsError.message);
             }
           }
 
@@ -443,8 +509,7 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()(
           return { success: true };
         } catch (err: any) {
           console.error("Failed to finish workout:", err);
-          set({ isSaving: false });
-          return { success: false, error: err?.message || "Failed to finish workout" };
+          return await handleOfflineFallback(err?.message);
         } finally {
           set({ isSaving: false });
         }

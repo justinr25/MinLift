@@ -13,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useExerciseStore } from "../../../src/stores/exercise-store";
+import { useAuthStore } from "../../../src/stores/auth-store";
 import { CardContainer } from "../../../src/components/ui/CardContainer";
 
 export default function ExerciseDetailScreen() {
@@ -30,6 +31,7 @@ export default function ExerciseDetailScreen() {
     toggleLinkedTemplate,
     archiveExercise,
   } = useExerciseStore();
+  const preferredUnit = useAuthStore((s) => s.profile?.preferred_weight_unit) || "lbs";
 
   const [notes, setNotes] = useState("");
   const [isNotesSaved, setIsNotesSaved] = useState(true);
@@ -263,7 +265,7 @@ export default function ExerciseDetailScreen() {
                   {session.totalSets} {session.totalSets === 1 ? "set" : "sets"} •{" "}
                   {session.maxWeight === 0
                     ? `BW (${session.bestReps} reps)`
-                    : `Max ${session.maxWeight} lbs • ${session.bestReps} reps`}
+                    : `Max ${session.maxWeight} ${preferredUnit} • ${session.bestReps} reps`}
                 </Text>
               </View>
             ))

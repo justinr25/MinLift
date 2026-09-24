@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { Profile } from "../types/database";
@@ -26,260 +28,274 @@ interface AuthState {
   updatePreferredUnit: (unit: "lbs" | "kg") => Promise<{ success: boolean; error?: string }>;
 }
 
-export const useAuthStore = create<AuthState>((set, get) => ({
-  session: null,
-  user: null,
-  profile: null,
-  isDemo: false,
-  isLoading: false,
-  isInitialized: false,
-
-  initialize: async () => {
-    try {
-      set({ isLoading: true });
-
-      // Get initial session
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      set({
-        session,
-        user: session?.user ?? null,
-      });
-
-      if (session?.user) {
-        await get().fetchProfile(session.user.id);
-      }
-
-      // Listen for auth state changes
-      supabase.auth.onAuthStateChange(async (_event, session) => {
-        set({
-          session,
-          user: session?.user ?? null,
-        });
-
-        if (session?.user) {
-          await get().fetchProfile(session.user.id);
-        } else {
-          set({ profile: null });
-        }
-      });
-    } catch (err) {
-      console.error("Failed to initialize auth:", err);
-    } finally {
-      set({ isLoading: false, isInitialized: true });
-    }
-  },
-
-  fetchProfile: async (userId: string) => {
-    if (userId === DEMO_USER_ID || get().isDemo) {
-      return;
-    }
-    try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", userId)
-        .maybeSingle();
-
-      if (error) {
-        console.warn("Notice fetching profile:", error.message);
-        // Fallback: create a local profile using auth user metadata
-        const currentUser = get().user;
-        if (currentUser) {
-          set({
-            profile: {
-              id: userId,
-              display_name:
-                currentUser.user_metadata?.full_name ||
-                currentUser.email?.split("@")[0] ||
-                "Lifter",
-              preferred_weight_unit: "lbs",
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            },
-          });
-        }
-        return;
-      }
-
-      if (data) {
-        set({ profile: data as Profile });
-      } else {
-        // Fallback if profile doesn't exist yet
-        const currentUser = get().user;
-        if (currentUser) {
-          set({
-            profile: {
-              id: userId,
-              display_name:
-                currentUser.user_metadata?.full_name ||
-                currentUser.email?.split("@")[0] ||
-                "Lifter",
-              preferred_weight_unit: "lbs",
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            },
-          });
-        }
-      }
-    } catch (err) {
-      console.warn("Notice fetching profile:", err);
-    }
-  },
-
-  signIn: async (email: string, password: string) => {
-    set({ isLoading: true });
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
-
-      if (error) {
-        return { error };
-      }
-
-      set({ isDemo: false });
-      return { error: null };
-    } catch (err: any) {
-      return { error: err };
-    } finally {
-      set({ isLoading: false });
-    }
-  },
-
-  signInDemo: () => {
-    const demoUser = {
-      id: DEMO_USER_ID,
-      email: "guest@minlift.local",
-      user_metadata: { full_name: "Guest" },
-      app_metadata: {},
-      aud: "authenticated",
-      created_at: new Date().toISOString(),
-    } as any;
-
-    set({
-      session: {
-        access_token: "demo-token",
-        refresh_token: "demo-refresh",
-        expires_in: 3600,
-        token_type: "bearer",
-        user: demoUser,
-      } as any,
-      user: demoUser,
-      profile: {
-        id: DEMO_USER_ID,
-        display_name: "Guest",
-        preferred_weight_unit: "lbs",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      isDemo: true,
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set, get) => ({
+      session: null,
+      user: null,
+      profile: null,
+      isDemo: false,
       isLoading: false,
-    });
-  },
+      isInitialized: false,
 
-  signUp: async (email: string, password: string, displayName: string) => {
-    set({ isLoading: true });
-    try {
-      const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-        options: {
-          data: {
-            full_name: displayName.trim(),
-          },
-        },
-      });
-
-      if (error) {
-        return { error };
-      }
-
-      // If user was created, also attempt to upsert profile record
-      if (data.user) {
+      initialize: async () => {
         try {
-          await supabase.from("profiles").upsert({
-            id: data.user.id,
-            display_name: displayName.trim(),
-            preferred_weight_unit: "lbs",
+          set({ isLoading: true });
+
+          // Get initial session
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+
+          set({
+            session,
+            user: session?.user ?? null,
           });
-        } catch {
-          // Trigger handles this if direct upsert fails
+
+          if (session?.user) {
+            await get().fetchProfile(session.user.id);
+          }
+
+          // Listen for auth state changes
+          supabase.auth.onAuthStateChange(async (_event, session) => {
+            set({
+              session,
+              user: session?.user ?? null,
+            });
+
+            if (session?.user) {
+              await get().fetchProfile(session.user.id);
+            } else {
+              set({ profile: null });
+            }
+          });
+        } catch (err) {
+          console.error("Failed to initialize auth:", err);
+        } finally {
+          set({ isLoading: false, isInitialized: true });
         }
-      }
+      },
 
-      set({ isDemo: false });
-      return { error: null };
-    } catch (err: any) {
-      return { error: err };
-    } finally {
-      set({ isLoading: false });
-    }
-  },
+      fetchProfile: async (userId: string) => {
+        if (userId === DEMO_USER_ID || get().isDemo) {
+          return;
+        }
+        try {
+          const { data, error } = await supabase
+            .from("profiles")
+            .select("*")
+            .eq("id", userId)
+            .maybeSingle();
 
-  updatePreferredUnit: async (unit: "lbs" | "kg") => {
-    const { user, isDemo, profile } = get();
+          if (error) {
+            console.warn("Notice fetching profile:", error.message);
+            // If offline, preserve the cached persisted profile! Do not overwrite with defaults.
+            const currentProfile = get().profile;
+            if (currentProfile && currentProfile.id === userId) {
+              return;
+            }
 
-    // 1. Optimistic local state update
-    if (profile) {
-      set({
-        profile: {
-          ...profile,
-          preferred_weight_unit: unit,
-          updated_at: new Date().toISOString(),
-        },
-      });
-    }
+            const currentUser = get().user;
+            if (currentUser) {
+              set({
+                profile: {
+                  id: userId,
+                  display_name:
+                    currentUser.user_metadata?.full_name ||
+                    currentUser.email?.split("@")[0] ||
+                    "Lifter",
+                  preferred_weight_unit: "lbs",
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                },
+              });
+            }
+            return;
+          }
 
-    if (!user || isDemo || user.id === DEMO_USER_ID) {
-      return { success: true };
-    }
+          if (data) {
+            set({ profile: data as Profile });
+          } else {
+            // Fallback if profile doesn't exist yet
+            const currentUser = get().user;
+            if (currentUser) {
+              set({
+                profile: {
+                  id: userId,
+                  display_name:
+                    currentUser.user_metadata?.full_name ||
+                    currentUser.email?.split("@")[0] ||
+                    "Lifter",
+                  preferred_weight_unit: "lbs",
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                },
+              });
+            }
+          }
+        } catch (err) {
+          console.warn("Notice fetching profile:", err);
+        }
+      },
 
-    // 2. Persist to Supabase
-    try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          preferred_weight_unit: unit,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", user.id);
+      signIn: async (email: string, password: string) => {
+        set({ isLoading: true });
+        try {
+          const { error } = await supabase.auth.signInWithPassword({
+            email: email.trim(),
+            password,
+          });
 
-      if (error) {
-        console.warn("Notice updating preferred unit:", error.message);
-        await enqueueMutation("UPDATE_PREFERENCES", {
-          userId: user.id,
-          preferredWeightUnit: unit,
+          if (error) {
+            return { error };
+          }
+
+          set({ isDemo: false });
+          return { error: null };
+        } catch (err: any) {
+          return { error: err };
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+
+      signInDemo: () => {
+        const demoUser = {
+          id: DEMO_USER_ID,
+          email: "guest@minlift.local",
+          user_metadata: { full_name: "Guest" },
+          app_metadata: {},
+          aud: "authenticated",
+          created_at: new Date().toISOString(),
+        } as any;
+
+        set({
+          session: {
+            access_token: "demo-token",
+            refresh_token: "demo-refresh",
+            expires_in: 3600,
+            token_type: "bearer",
+            user: demoUser,
+          } as any,
+          user: demoUser,
+          profile: {
+            id: DEMO_USER_ID,
+            display_name: "Guest",
+            preferred_weight_unit: "lbs",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+          isDemo: true,
+          isLoading: false,
         });
-        return { success: true };
-      }
+      },
 
-      return { success: true };
-    } catch (err: any) {
-      await enqueueMutation("UPDATE_PREFERENCES", {
-        userId: user.id,
-        preferredWeightUnit: unit,
-      });
-      return { success: true };
-    }
-  },
+      signUp: async (email: string, password: string, displayName: string) => {
+        set({ isLoading: true });
+        try {
+          const { data, error } = await supabase.auth.signUp({
+            email: email.trim(),
+            password,
+            options: {
+              data: {
+                full_name: displayName.trim(),
+              },
+            },
+          });
 
-  signOut: async () => {
-    set({ isLoading: true });
-    try {
-      if (!get().isDemo) {
-        await supabase.auth.signOut();
-      }
-      set({ session: null, user: null, profile: null, isDemo: false });
-    } catch (err) {
-      console.error("Failed to sign out:", err);
-    } finally {
-      set({ isLoading: false });
+          if (error) {
+            return { error };
+          }
+
+          // If user was created, also attempt to upsert profile record
+          if (data.user) {
+            try {
+              await supabase.from("profiles").upsert({
+                id: data.user.id,
+                display_name: displayName.trim(),
+                preferred_weight_unit: "lbs",
+              });
+            } catch {
+              // Trigger handles this if direct upsert fails
+            }
+          }
+
+          set({ isDemo: false });
+          return { error: null };
+        } catch (err: any) {
+          return { error: err };
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+
+      updatePreferredUnit: async (unit: "lbs" | "kg") => {
+        const { user, isDemo, profile } = get();
+
+        // 1. Optimistic local state update
+        if (profile) {
+          set({
+            profile: {
+              ...profile,
+              preferred_weight_unit: unit,
+              updated_at: new Date().toISOString(),
+            },
+          });
+        }
+
+        if (!user || isDemo || user.id === DEMO_USER_ID) {
+          return { success: true };
+        }
+
+        // 2. Persist to Supabase
+        try {
+          const { error } = await supabase
+            .from("profiles")
+            .update({
+              preferred_weight_unit: unit,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", user.id);
+
+          if (error) {
+            console.warn("Notice updating preferred unit:", error.message);
+            await enqueueMutation("UPDATE_PREFERENCES", {
+              userId: user.id,
+              preferredWeightUnit: unit,
+            });
+            return { success: true };
+          }
+
+          return { success: true };
+        } catch (err: any) {
+          await enqueueMutation("UPDATE_PREFERENCES", {
+            userId: user.id,
+            preferredWeightUnit: unit,
+          });
+          return { success: true };
+        }
+      },
+
+      signOut: async () => {
+        set({ isLoading: true });
+        try {
+          if (!get().isDemo) {
+            await supabase.auth.signOut();
+          }
+          set({ session: null, user: null, profile: null, isDemo: false });
+        } catch (err) {
+          console.error("Failed to sign out:", err);
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+    }),
+    {
+      name: "minlift-auth-profile",
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({ profile: state.profile }),
     }
-  },
-}));
+  )
+);
 
 export default useAuthStore;
