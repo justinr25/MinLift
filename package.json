@@ -9,6 +9,7 @@
     "web": "expo start --web",
     "check": "tsc --noEmit",
     "test:phase3": "npx tsx -r ./scripts/setup-alias.cjs scripts/test-phase3.ts",
+    "test:phase4": "npx tsx -r ./scripts/setup-alias.cjs scripts/test-phase4.ts",
     "postinstall": "patch-package"
   },
   "dependencies": {

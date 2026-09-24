@@ -1,6 +1,28 @@
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "../lib/supabase";
 import { useAuthStore, DEMO_USER_ID } from "./auth-store";
+
+function getInitialGhostValues(name: string, category?: string): { ghostReps: number; ghostWeight: number } {
+  const lowerName = (name || "").toLowerCase();
+  const lowerCat = (category || "").toLowerCase();
+  const isBodyweight =
+    lowerCat === "core" ||
+    lowerName.includes("pull-up") ||
+    lowerName.includes("chin-up") ||
+    lowerName.includes("dip") ||
+    lowerName.includes("push-up") ||
+    lowerName.includes("plank") ||
+    lowerName.includes("bodyweight") ||
+    lowerName.includes("hanging leg") ||
+    lowerName.includes("crunch");
+
+  if (isBodyweight) {
+    return { ghostReps: 10, ghostWeight: 0 };
+  }
+  return { ghostReps: 8, ghostWeight: 135 };
+}
 
 export interface HistoryWorkoutItem {
   id: string;
@@ -63,15 +85,18 @@ interface WorkoutState {
   ) => Promise<void>;
   deleteExerciseFromWorkout: (workoutId: string, exerciseId: string) => Promise<void>;
   reorderExercises: (reordered: DetailExerciseItem[]) => void;
+  updateWorkoutNotes: (workoutId: string, notes: string) => Promise<{ success: boolean; error?: string }>;
   deleteWorkout: (workoutId: string) => Promise<{ success: boolean; error?: string }>;
 }
 
-export const useWorkoutStore = create<WorkoutState>((set, get) => ({
-  workouts: [],
-  currentDetail: null,
-  isLoading: false,
-  isSaving: false,
-  error: null,
+export const useWorkoutStore = create<WorkoutState>()(
+  persist(
+    (set, get) => ({
+      workouts: [],
+      currentDetail: null,
+      isLoading: false,
+      isSaving: false,
+      error: null,
 
   fetchWorkouts: async () => {
     const { user, isDemo } = useAuthStore.getState();
@@ -222,19 +247,20 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
   },
 
   updateSet: async (setId: string, reps: number, weight: number) => {
-    // 1. Optimistically update currentDetail in state
     const { currentDetail } = get();
-    if (currentDetail) {
-      const updatedExercises = currentDetail.exercises.map((ex) => ({
-        ...ex,
-        sets: ex.sets.map((s) =>
-          s.id === setId
-            ? { ...s, reps: String(reps), weight: String(weight) }
-            : s
-        ),
-      }));
-      set({ currentDetail: { ...currentDetail, exercises: updatedExercises } });
-    }
+    if (!currentDetail) return;
+    const prevDetail = currentDetail;
+
+    // 1. Optimistically update currentDetail in state
+    const updatedExercises = currentDetail.exercises.map((ex) => ({
+      ...ex,
+      sets: ex.sets.map((s) =>
+        s.id === setId
+          ? { ...s, reps: String(reps), weight: String(weight) }
+          : s
+      ),
+    }));
+    set({ currentDetail: { ...currentDetail, exercises: updatedExercises } });
 
     // 2. Persist update to Supabase
     try {
@@ -245,15 +271,18 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
 
       if (error) {
         console.warn("Error updating set in Supabase:", error.message);
+        set({ currentDetail: prevDetail, error: error.message });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("updateSet exception:", err);
+      set({ currentDetail: prevDetail, error: err?.message || "Failed to update set" });
     }
   },
 
   deleteSet: async (setId: string, exerciseId: string) => {
     const { currentDetail } = get();
     if (!currentDetail) return;
+    const prevDetail = currentDetail;
 
     // Optimistically remove set and renumber
     const updatedExercises = currentDetail.exercises.map((ex) => {
@@ -267,7 +296,7 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
 
     set({ currentDetail: { ...currentDetail, exercises: updatedExercises } });
 
-    // Persist delete to Supabase
+    // Persist delete to Supabase & renumber remaining sets
     try {
       const { error } = await supabase
         .from("workout_sets")
@@ -276,9 +305,23 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
 
       if (error) {
         console.warn("Error deleting set in Supabase:", error.message);
+        set({ currentDetail: prevDetail, error: error.message });
+        return;
       }
-    } catch (err) {
+
+      // Sync renumbered set numbers in Supabase so database matches memory
+      const targetEx = updatedExercises.find((e) => e.id === exerciseId);
+      if (targetEx && targetEx.sets.length > 0) {
+        for (const s of targetEx.sets) {
+          await supabase
+            .from("workout_sets")
+            .update({ set_number: s.setNumber })
+            .eq("id", s.id);
+        }
+      }
+    } catch (err: any) {
       console.error("deleteSet exception:", err);
+      set({ currentDetail: prevDetail, error: err?.message || "Failed to delete set" });
     }
   },
 
@@ -296,8 +339,14 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
 
     const previousSet = targetEx.sets[targetEx.sets.length - 1];
     const newSetNumber = targetEx.sets.length + 1;
-    const reps = defaultReps ?? (previousSet ? Number(previousSet.reps) || 8 : 8);
-    const weight = defaultWeight ?? (previousSet ? Number(previousSet.weight) || 135 : 135);
+    const ghostDefaults = getInitialGhostValues(targetEx.name, targetEx.category);
+
+    const prevRepsNum = previousSet && previousSet.reps !== "" ? Number(previousSet.reps) : NaN;
+    const prevWeightNum = previousSet && previousSet.weight !== "" ? Number(previousSet.weight) : NaN;
+
+    const reps = defaultReps ?? (!isNaN(prevRepsNum) ? prevRepsNum : ghostDefaults.ghostReps);
+    // Explicitly preserve 0 lbs (e.g. bodyweight pull-ups, planks)
+    const weight = defaultWeight ?? (!isNaN(prevWeightNum) ? prevWeightNum : ghostDefaults.ghostWeight);
 
     try {
       const { data, error } = await supabase
@@ -353,7 +402,7 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
           .from("exercises")
           .select("id")
           .eq("user_id", user.id)
-          .eq("name", exercise.name)
+          .ilike("name", exercise.name.trim())
           .maybeSingle();
 
         if (existingEx) {
@@ -363,7 +412,7 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
             .from("exercises")
             .insert({
               user_id: user.id,
-              name: exercise.name,
+              name: exercise.name.trim(),
               category: exercise.category || "Other",
             })
             .select("id")
@@ -372,15 +421,17 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
         }
       }
 
-      // Add Set 1 for the new exercise
+      const ghostDefaults = getInitialGhostValues(exercise.name, exercise.category);
+
+      // Add Set 1 for the new exercise using category-aware ghost values
       const { data: setData, error: setError } = await supabase
         .from("workout_sets")
         .insert({
           workout_id: workoutId,
           exercise_id: dbExId,
           set_number: 1,
-          reps: 8,
-          weight: 135,
+          reps: ghostDefaults.ghostReps,
+          weight: ghostDefaults.ghostWeight,
           is_completed: true,
         })
         .select()
@@ -401,6 +452,7 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
   deleteExerciseFromWorkout: async (workoutId: string, exerciseId: string) => {
     const { currentDetail } = get();
     if (!currentDetail) return;
+    const prevDetail = currentDetail;
 
     // Optimistically update
     const updated = currentDetail.exercises.filter((e) => e.id !== exerciseId);
@@ -415,9 +467,11 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
 
       if (error) {
         console.warn("Error deleting exercise from workout:", error.message);
+        set({ currentDetail: prevDetail, error: error.message });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("deleteExerciseFromWorkout exception:", err);
+      set({ currentDetail: prevDetail, error: err?.message });
     }
   },
 
@@ -425,6 +479,33 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
     const { currentDetail } = get();
     if (!currentDetail) return;
     set({ currentDetail: { ...currentDetail, exercises: reordered } });
+  },
+
+  updateWorkoutNotes: async (workoutId: string, notes: string) => {
+    const { currentDetail } = get();
+    const prevDetail = currentDetail;
+
+    if (currentDetail && currentDetail.id === workoutId) {
+      set({ currentDetail: { ...currentDetail, notes } });
+    }
+
+    try {
+      const { error } = await supabase
+        .from("workouts")
+        .update({ notes })
+        .eq("id", workoutId);
+
+      if (error) {
+        console.warn("Error updating notes in Supabase:", error.message);
+        if (prevDetail) set({ currentDetail: prevDetail, error: error.message });
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (err: any) {
+      console.error("updateWorkoutNotes exception:", err);
+      if (prevDetail) set({ currentDetail: prevDetail });
+      return { success: false, error: err?.message || "Failed to update notes" };
+    }
   },
 
   deleteWorkout: async (workoutId: string) => {
@@ -456,4 +537,14 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
       return { success: false, error: err?.message || "Failed to delete workout" };
     }
   },
-}));
+    }),
+    {
+      name: "minlift-workout-history",
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({
+        workouts: state.workouts,
+        currentDetail: state.currentDetail,
+      }),
+    }
+  )
+);

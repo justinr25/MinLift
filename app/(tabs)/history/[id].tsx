@@ -93,7 +93,7 @@ function EditableSetRow({
             value={weight}
             onChangeText={setWeight}
             onBlur={handleBlur}
-            keyboardType="numeric"
+            keyboardType="decimal-pad"
             className="flex-1 text-center text-[16px] font-mono font-bold text-primary"
             selectTextOnFocus
           />
@@ -128,16 +128,28 @@ export default function WorkoutDetailScreen() {
     addExerciseToWorkout,
     deleteExerciseFromWorkout,
     reorderExercises,
+    updateWorkoutNotes,
     deleteWorkout,
   } = useWorkoutStore();
 
   const [showAddSheet, setShowAddSheet] = useState(false);
+  const [notes, setNotes] = useState(currentDetail?.notes || "");
 
   useEffect(() => {
     if (id) {
       fetchWorkoutDetail(id);
     }
   }, [id]);
+
+  useEffect(() => {
+    setNotes(currentDetail?.notes || "");
+  }, [currentDetail?.notes]);
+
+  const handleBlurNotes = () => {
+    if (id && notes !== (currentDetail?.notes || "")) {
+      updateWorkoutNotes(id, notes);
+    }
+  };
 
   const handlePromptDeleteExercise = (ex: DetailExerciseItem) => {
     if (Platform.OS === "web") {
@@ -185,8 +197,8 @@ export default function WorkoutDetailScreen() {
         deleteWorkout(id).then((res) => {
           if (res.success) {
             router.replace("/(tabs)/history" as any);
-          } else {
-            alert(res.error || "Failed to delete workout.");
+          } else if (typeof window !== "undefined") {
+            window.alert(res.error || "Failed to delete workout.");
           }
         });
       }
@@ -263,6 +275,7 @@ export default function WorkoutDetailScreen() {
       <ScrollView
         className="flex-1 px-5 pt-4"
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingBottom: 100 }}
       >
         {/* Exercise Cards matching Wireframe 7 */}
@@ -352,6 +365,27 @@ export default function WorkoutDetailScreen() {
             </TouchableOpacity>
           </View>
         ))}
+
+        {/* Workout Notes Card matching Wireframe 7 */}
+        <View className="mb-4 bg-surface rounded-2xl border border-border-subtle p-4">
+          <View className="flex-row items-center mb-2">
+            <Ionicons name="document-text-outline" size={16} color="#6B7280" />
+            <Text className="text-[12px] font-semibold text-muted uppercase tracking-wider ml-1.5">
+              Workout Notes
+            </Text>
+          </View>
+          <TextInput
+            value={notes}
+            onChangeText={setNotes}
+            onBlur={handleBlurNotes}
+            placeholder="Add form cues, machine settings, or workout notes..."
+            placeholderTextColor="#9CA3AF"
+            multiline
+            numberOfLines={3}
+            className="min-h-[72px] bg-white border border-border-subtle rounded-xl p-3 text-[14px] text-primary"
+            textAlignVertical="top"
+          />
+        </View>
 
         {/* Add Exercise Action */}
         <View className="mt-1 mb-8">
