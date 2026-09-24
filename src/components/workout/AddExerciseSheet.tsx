@@ -13,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { ChipPicker } from "../ui/ChipPicker";
 import { DashedActionCard } from "../ui/DashedActionCard";
+import { useExerciseStore } from "../../stores/exercise-store";
 
 // Starter list of standard exercises
 const DEFAULT_EXERCISE_SUGGESTIONS = [
@@ -61,6 +62,7 @@ interface AddExerciseSheetProps {
         id: string;
         name: string;
         category: string;
+        notes?: string | null;
     }) => void;
 }
 
@@ -72,8 +74,11 @@ export const AddExerciseSheet: React.FC<AddExerciseSheetProps> = ({
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedCategory, setSelectedCategory] = useState("All");
     const [customExercises, setCustomExercises] = useState<
-        Array<{ id: string; name: string; category: string }>
+        Array<{ id: string; name: string; category: string; notes?: string | null }>
     >([]);
+
+    const storeExercises = useExerciseStore((state) => state.exercises);
+    const createExercise = useExerciseStore((state) => state.createExercise);
 
     const categories = [
         "All",
@@ -85,7 +90,21 @@ export const AddExerciseSheet: React.FC<AddExerciseSheetProps> = ({
         "Core",
     ];
 
-    const allExercises = [...DEFAULT_EXERCISE_SUGGESTIONS, ...customExercises];
+    const baseExercises = storeExercises.length > 0
+        ? storeExercises.map((e) => ({
+            id: e.id,
+            name: e.name,
+            category: e.category,
+            notes: e.notes,
+        }))
+        : DEFAULT_EXERCISE_SUGGESTIONS.map((e) => ({
+            id: e.id,
+            name: e.name,
+            category: e.category,
+            notes: null as string | null,
+        }));
+
+    const allExercises = [...baseExercises, ...customExercises];
 
     const filteredExercises = allExercises.filter((item) => {
         const matchesCategory =
@@ -96,15 +115,27 @@ export const AddExerciseSheet: React.FC<AddExerciseSheetProps> = ({
         return matchesCategory && matchesSearch;
     });
 
-    const handleCreateCustom = (name: string) => {
+    const handleCreateCustom = async (name: string) => {
         if (!name.trim()) return;
-        const newEx = {
-            id: `custom-${Date.now()}`,
-            name: name.trim(),
-            category: selectedCategory === "All" ? "Other" : selectedCategory,
-        };
-        setCustomExercises((prev) => [newEx, ...prev]);
-        onSelectExercise(newEx);
+        const cat = selectedCategory === "All" ? "Other" : selectedCategory;
+        const res = await createExercise({ name: name.trim(), category: cat });
+        if (res.success && res.exercise) {
+            onSelectExercise({
+                id: res.exercise.id,
+                name: res.exercise.name,
+                category: res.exercise.category,
+                notes: res.exercise.notes,
+            });
+        } else {
+            const newEx = {
+                id: `custom-${Date.now()}`,
+                name: name.trim(),
+                category: cat,
+                notes: null,
+            };
+            setCustomExercises((prev) => [newEx, ...prev]);
+            onSelectExercise(newEx);
+        }
         onClose();
     };
 

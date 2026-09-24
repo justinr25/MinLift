@@ -10,6 +10,7 @@
     "check": "tsc --noEmit",
     "test:phase3": "npx tsx -r ./scripts/setup-alias.cjs scripts/test-phase3.ts",
     "test:phase4": "npx tsx -r ./scripts/setup-alias.cjs scripts/test-phase4.ts",
+    "test:phase5": "npx tsx -r ./scripts/setup-alias.cjs scripts/test-phase5.ts",
     "postinstall": "patch-package"
   },
   "dependencies": {
