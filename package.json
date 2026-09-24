@@ -7,23 +7,25 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test:phase3": "npx tsx -r ./scripts/setup-alias.cjs scripts/test-phase3.ts",
+    "postinstall": "patch-package"
   },
   "dependencies": {
-    "@expo/metro-runtime": "~57.0.12",
+    "@expo/metro-runtime": "~57.0.16",
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@supabase/supabase-js": "^2.112.3",
     "@types/react": "~19.2.4",
-    "expo": "^57.0.15",
+    "expo": "~57.0.24",
     "expo-constants": "~57.0.13",
-    "expo-linking": "~57.0.7",
-    "expo-router": "~57.0.15",
+    "expo-linking": "~57.0.10",
+    "expo-router": "~57.0.22",
     "expo-status-bar": "~57.0.1",
     "nativewind": "^4.2.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "react-native": "0.86.2",
+    "react-native": "0.86.3",
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
@@ -34,5 +36,8 @@
     "typescript": "~6.0.3",
     "zustand": "^5.0.15"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "patch-package": "^8.0.1"
+  }
 }

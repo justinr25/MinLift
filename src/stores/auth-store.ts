@@ -3,10 +3,13 @@ import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { Profile } from "../types/database";
 
+export const DEMO_USER_ID = "00000000-0000-0000-0000-000000000001";
+
 interface AuthState {
   session: Session | null;
   user: User | null;
   profile: Profile | null;
+  isDemo: boolean;
   isLoading: boolean;
   isInitialized: boolean;
   initialize: () => Promise<void>;
@@ -25,6 +28,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   session: null,
   user: null,
   profile: null,
+  isDemo: false,
   isLoading: false,
   isInitialized: false,
 
@@ -67,6 +71,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   fetchProfile: async (userId: string) => {
+    if (userId === DEMO_USER_ID || get().isDemo) {
+      return;
+    }
     try {
       const { data, error } = await supabase
         .from("profiles")
@@ -132,6 +139,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return { error };
       }
 
+      set({ isDemo: false });
       return { error: null };
     } catch (err: any) {
       return { error: err };
@@ -142,7 +150,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   signInDemo: () => {
     const demoUser = {
-      id: "demo-lifter-1",
+      id: DEMO_USER_ID,
       email: "guest@minlift.local",
       user_metadata: { full_name: "Guest" },
       app_metadata: {},
@@ -160,12 +168,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       } as any,
       user: demoUser,
       profile: {
-        id: "demo-lifter-1",
+        id: DEMO_USER_ID,
         display_name: "Guest",
         preferred_weight_unit: "lbs",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
+      isDemo: true,
       isLoading: false,
     });
   },
@@ -200,6 +209,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
       }
 
+      set({ isDemo: false });
       return { error: null };
     } catch (err: any) {
       return { error: err };
@@ -211,8 +221,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   signOut: async () => {
     set({ isLoading: true });
     try {
-      await supabase.auth.signOut();
-      set({ session: null, user: null, profile: null });
+      if (!get().isDemo) {
+        await supabase.auth.signOut();
+      }
+      set({ session: null, user: null, profile: null, isDemo: false });
     } catch (err) {
       console.error("Failed to sign out:", err);
     } finally {

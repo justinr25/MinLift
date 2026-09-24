@@ -55,6 +55,7 @@ export function SetRow({
             placeholderTextColor="#9CA3AF"
             keyboardType="number-pad"
             returnKeyType="done"
+            selectTextOnFocus
             className="h-[44px] bg-canvas rounded-md border border-border-subtle text-center text-[16px] font-mono text-primary px-2"
           />
         ) : (
@@ -77,6 +78,7 @@ export function SetRow({
               placeholderTextColor="#9CA3AF"
               keyboardType="decimal-pad"
               returnKeyType="done"
+              selectTextOnFocus
               className="h-[44px] bg-canvas rounded-md border border-border-subtle text-center text-[16px] font-mono text-primary px-2 pr-8"
             />
             <Text className="absolute right-2 text-[12px] text-muted font-medium pointer-events-none">

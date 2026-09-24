@@ -30,24 +30,34 @@ function RootLayoutNav() {
     }
   }, [session, isInitialized, segments]);
 
-  if (!isInitialized) {
-    return (
-      <View className="flex-1 bg-canvas items-center justify-center">
-        <ActivityIndicator size="large" color="#000000" />
-      </View>
-    );
-  }
-
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        contentStyle: { backgroundColor: "#FFFFFF" },
-      }}
-    >
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-    </Stack>
+    <View style={{ flex: 1, backgroundColor: "#FFFFFF" }}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: "#FFFFFF" },
+        }}
+      >
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+      </Stack>
+      {!isInitialized && (
+        <View
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "#FFFFFF",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <ActivityIndicator size="large" color="#000000" />
+        </View>
+      )}
+    </View>
   );
 }
 

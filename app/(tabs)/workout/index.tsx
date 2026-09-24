@@ -133,6 +133,7 @@ export default function WorkoutTabScreen() {
             <ScrollView
                 className="flex-1 px-5 pt-4"
                 showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
                 contentContainerStyle={{ paddingBottom: 100 }}
             >
                 {/* Exercise Logger Cards */}

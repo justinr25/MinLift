@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { supabase } from "../lib/supabase";
-import { useAuthStore } from "./auth-store";
+import { useAuthStore, DEMO_USER_ID } from "./auth-store";
 
 export interface HistoryWorkoutItem {
   id: string;
@@ -74,8 +74,13 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
   error: null,
 
   fetchWorkouts: async () => {
-    const user = useAuthStore.getState().user;
+    const { user, isDemo } = useAuthStore.getState();
     if (!user) return;
+
+    if (isDemo || user.id === DEMO_USER_ID) {
+      set({ workouts: [], isLoading: false, error: null });
+      return;
+    }
 
     set({ isLoading: true, error: null });
 
@@ -125,6 +130,12 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
   },
 
   fetchWorkoutDetail: async (workoutId: string) => {
+    const { user, isDemo } = useAuthStore.getState();
+    if (isDemo || user?.id === DEMO_USER_ID) {
+      set({ isLoading: false, error: null });
+      return null;
+    }
+
     set({ isLoading: true, error: null });
 
     try {

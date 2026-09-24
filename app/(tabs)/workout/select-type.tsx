@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -11,24 +11,42 @@ import { Ionicons } from "@expo/vector-icons";
 import { DashedActionCard } from "../../../src/components/ui/DashedActionCard";
 import { PrimaryButton } from "../../../src/components/ui/PrimaryButton";
 import { useActiveWorkoutStore } from "../../../src/stores/active-workout-store";
+import { useAuthStore, DEMO_USER_ID } from "../../../src/stores/auth-store";
+import { supabase } from "../../../src/lib/supabase";
 
 interface WorkoutTypeItem {
   id: string;
   name: string;
 }
 
+const DEFAULT_TYPES: WorkoutTypeItem[] = [
+  { id: "type-push", name: "Push" },
+  { id: "type-pull", name: "Pull" },
+  { id: "type-legs", name: "Legs" },
+];
+
 export default function SelectWorkoutTypeScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ locationId?: string; locationName?: string }>();
   const startWorkout = useActiveWorkoutStore((s) => s.startWorkout);
+  const { user, isDemo } = useAuthStore();
 
-  const [workoutTypes, setWorkoutTypes] = useState<WorkoutTypeItem[]>([
-    { id: "type-push", name: "Push" },
-    { id: "type-pull", name: "Pull" },
-    { id: "type-legs", name: "Legs" },
-  ]);
-
+  const [workoutTypes, setWorkoutTypes] = useState<WorkoutTypeItem[]>(DEFAULT_TYPES);
   const [selectedTypeId, setSelectedTypeId] = useState<string>("type-push");
+
+  useEffect(() => {
+    supabase
+      .from("workout_types")
+      .select("id, name, is_default, sort_order")
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true })
+      .then(({ data, error }) => {
+        if (!error && data && data.length > 0) {
+          setWorkoutTypes(data);
+          setSelectedTypeId(data[0].id);
+        }
+      });
+  }, [user?.id]);
 
   const handleNext = () => {
     const selected = workoutTypes.find((t) => t.id === selectedTypeId) || workoutTypes[0];
@@ -46,11 +64,35 @@ export default function SelectWorkoutTypeScreen() {
     router.replace("/(tabs)/workout" as any);
   };
 
-  const handleCreateNewType = (name: string) => {
-    if (!name.trim()) return;
+  const handleCreateNewType = async (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+
+    if (user && !isDemo && user.id !== DEMO_USER_ID) {
+      try {
+        const { data, error } = await supabase
+          .from("workout_types")
+          .insert({
+            user_id: user.id,
+            name: trimmed,
+            is_default: false,
+          })
+          .select("id, name")
+          .single();
+
+        if (data && !error) {
+          setWorkoutTypes((prev) => [...prev, { id: data.id, name: data.name }]);
+          setSelectedTypeId(data.id);
+          return;
+        }
+      } catch (err) {
+        console.warn("Notice inserting workout type to Supabase:", err);
+      }
+    }
+
     const newType: WorkoutTypeItem = {
       id: `type-${Date.now()}`,
-      name: name.trim(),
+      name: trimmed,
     };
     setWorkoutTypes((prev) => [...prev, newType]);
     setSelectedTypeId(newType.id);

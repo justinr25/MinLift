@@ -98,7 +98,10 @@ export default function SignInScreen() {
 
             {/* Error Message */}
             {errorMessage ? (
-              <View className="mt-3 p-3 bg-danger/10 border border-danger/20 rounded-md">
+              <View
+                style={{ backgroundColor: "rgba(239, 68, 68, 0.1)", borderColor: "rgba(239, 68, 68, 0.2)" }}
+                className="mt-3 p-3 border rounded-md"
+              >
                 <Text className="text-danger text-[13px] text-center font-medium">
                   {errorMessage}
                 </Text>

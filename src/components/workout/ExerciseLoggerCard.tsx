@@ -40,9 +40,9 @@ export const ExerciseLoggerCard: React.FC<ExerciseLoggerCardProps> = ({
           activeOpacity={0.7}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           onPress={() => onRemoveExercise(exercise.id)}
-          className="p-1"
+          className="w-10 h-10 items-center justify-center rounded-full"
         >
-          <Ionicons name="trash-outline" size={18} color="#9CA3AF" />
+          <Ionicons name="trash-outline" size={20} color="#9CA3AF" />
         </TouchableOpacity>
       </View>
 

@@ -3,14 +3,14 @@ import { View, Text, ScrollView, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useAuthStore } from "../../src/stores/auth-store";
+import { useAuthStore, DEMO_USER_ID } from "../../src/stores/auth-store";
 import { useActiveWorkoutStore } from "../../src/stores/active-workout-store";
 import { CardContainer } from "../../src/components/ui/CardContainer";
 import { supabase } from "../../src/lib/supabase";
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user, profile } = useAuthStore();
+  const { user, profile, isDemo } = useAuthStore();
   const isWorkoutActive = useActiveWorkoutStore((s) => s.isActive);
   const activeTypeName = useActiveWorkoutStore((s) => s.workoutTypeName);
 
@@ -28,7 +28,7 @@ export default function HomeScreen() {
   }>({ count: 0, activeDayIndices: [] });
 
   const fetchDashboardData = useCallback(async () => {
-    if (!user) {
+    if (!user || isDemo || user.id === DEMO_USER_ID) {
       setLastWorkout(null);
       setWeeklySessions({ count: 0, activeDayIndices: [] });
       return;
@@ -144,7 +144,7 @@ export default function HomeScreen() {
           >
             <View className="bg-primary rounded-xl p-4 flex-row items-center justify-between">
               <View className="flex-row items-center space-x-3">
-                <View className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                <View className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
                 <View>
                   <Text className="text-white text-[15px] font-semibold">
                     Workout in Progress: {activeTypeName}
